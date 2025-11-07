@@ -1,0 +1,440 @@
+{% extends 'base.html' %}
+
+{% block title %}Staff Dashboard - Attendance System{% endblock %}
+
+{% block extra_css %}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="fas fa-chalkboard-teacher me-2"></i>Staff Dashboard
+        </h2>
+        <p class="text-muted">Welcome, {{ user.get_full_name }}! Manage your classes and monitor attendance.</p>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="staff-classes-count" class="card-title">{{ classes.count }}</h4>
+                        <p class="card-text">Total Classes</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-book fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="staff-total-students" class="card-title">{{ total_students }}</h4>
+                        <p class="card-text">Total Students</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-users fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="staff-today-attendance" class="card-title">{{ today_attendance }}</h4>
+                        <p class="card-text">Today's Attendance</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-check-circle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">{{ user.role|title }}</h4>
+                        <p class="card-text">Role</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-user-tag fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt me-2"></i>Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-2">
+                        <a href="{% url 'adminview:class_create' %}" class="btn btn-primary w-100">
+                            <i class="fas fa-plus me-2"></i>Create New Class
+                        </a>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <a href="{% url 'adminview:class_list' %}" class="btn btn-outline-primary w-100">
+                            <i class="fas fa-list me-2"></i>Manage Classes
+                        </a>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <a href="{% url 'adminview:attendance_analytics' %}" class="btn btn-outline-info w-100">
+                            <i class="fas fa-chart-bar me-2"></i>View Analytics
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- Your Classes -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-book me-2"></i>Your Classes
+                </h5>
+                <a href="{% url 'adminview:class_list' %}" class="btn btn-sm btn-outline-primary">
+                    View All
+                </a>
+            </div>
+            <div class="card-body">
+                {% if classes %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Class Name</th>
+                                    <th>Students</th>
+                                    <th>Geo-fence</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for class in classes %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ class.name }}</strong>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">{{ class.students.count }} students</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ class.geolocation.name }}</span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <a href="{% url 'adminview:class_edit' class.id %}" 
+                                               class="btn btn-outline-primary">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <a href="{% url 'adminview:class_enrollment' class.id %}" 
+                                               class="btn btn-outline-success">
+                                                <i class="fas fa-users"></i>
+                                            </a>
+                                            <a href="{% url 'adminview:class_delete' class.id %}" 
+                                               class="btn btn-outline-danger">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-book fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Classes Yet</h5>
+                        <p class="text-muted">You haven't created any classes yet.</p>
+                        <a href="{% url 'adminview:class_create' %}" class="btn btn-primary">
+                            <i class="fas fa-plus me-2"></i>Create Your First Class
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Attendance -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-clock me-2"></i>Recent Attendance
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if recent_attendance %}
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Student</th>
+                                    <th>Class</th>
+                                    <th>Time</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for record in recent_attendance %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ record.student.get_full_name }}</strong>
+                                        <br>
+                                        <small class="text-muted">@{{ record.student.username }}</small>
+                                    </td>
+                                    <td>{{ record.class_instance.name }}</td>
+                                    <td>
+                                        <small>{{ record.timestamp|date:"M d, Y" }}</small>
+                                        <br>
+                                        <small class="text-muted">{{ record.timestamp|time:"H:i" }}</small>
+                                    </td>
+                                    <td>
+                                        {% if record.is_present %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Present
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-times me-1"></i>Absent
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-clock fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Recent Attendance</h5>
+                        <p class="text-muted">No attendance records found for your classes.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+{% if google_maps_api_key %}
+<!-- Google Maps API -->
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places,drawing&v=weekly" async defer></script>
+{% endif %}
+<script>
+// Staff map functionality for displaying class geo-fences with polygon drawing
+(function(){
+  const data = {{ class_geofences_json|default:'[]'|safe }};
+  let map, drawingManager, currentPolygon = null;
+  
+  function init(){
+    map = new google.maps.Map(document.getElementById('staffMap'), { 
+      center: {lat: 0, lng: 0}, 
+      zoom: 2,
+      mapTypeControl: true,
+      streetViewControl: true,
+      fullscreenControl: true
+    });
+    
+    // Initialize drawing manager for polygon creation
+    drawingManager = new google.maps.drawing.DrawingManager({
+      drawingMode: null,
+      drawingControl: true,
+      drawingControlOptions: {
+        position: google.maps.ControlPosition.TOP_CENTER,
+        drawingModes: [
+          google.maps.drawing.OverlayType.POLYGON,
+          google.maps.drawing.OverlayType.MARKER
+        ]
+      }
+    });
+    drawingManager.setMap(map);
+    
+    // Handle polygon completion
+    google.maps.event.addListener(drawingManager, 'overlaycomplete', function(event) {
+      if (event.type === google.maps.drawing.OverlayType.POLYGON) {
+        if (currentPolygon) {
+          currentPolygon.setMap(null);
+        }
+        currentPolygon = event.overlay;
+        
+        // Get polygon coordinates
+        const path = currentPolygon.getPath();
+        const coordinates = [];
+        for (let i = 0; i < path.getLength(); i++) {
+          const point = path.getAt(i);
+          coordinates.push({
+            lat: point.lat(),
+            lng: point.lng()
+          });
+        }
+        
+        // Show coordinates info
+        showPolygonInfo(coordinates);
+        
+        // Disable drawing mode
+        drawingManager.setDrawingMode(null);
+      }
+    });
+    
+    if (data.length === 0) {
+      // No classes with geo-fences yet
+      const center = map.getCenter();
+      const infoWindow = new google.maps.InfoWindow({
+        content: '<div class="text-center"><i class="fas fa-info-circle text-info"></i><br><strong>No Classes with Geo-fences Yet</strong><br><small>Create a class and assign a geo-fence to see it displayed here.</small><br><br><small class="text-muted">Use the drawing tools above to create new geo-fences!</small></div>'
+      });
+      infoWindow.setPosition(center);
+      infoWindow.open(map);
+      return;
+    }
+    
+    // Display geo-fences for existing classes
+    const bounds = new google.maps.LatLngBounds();
+    data.forEach(item => {
+      if (!item.coordinates || !item.coordinates.length) return;
+      const path = item.coordinates.map(c => ({lat: c.lat, lng: c.lng}));
+      const polygon = new google.maps.Polygon({ 
+        paths: path, 
+        strokeColor: '#0d6efd', 
+        fillColor: '#0d6efd', 
+        fillOpacity: 0.15, 
+        strokeOpacity: 0.8, 
+        strokeWeight: 2 
+      });
+      polygon.setMap(map);
+      
+      // Add info window for the geo-fence
+      const infoWindow = new google.maps.InfoWindow({
+        content: `<div><strong>${item.class_name}</strong><br><small>Geo-fence: ${item.geofence_name}</small><br><small class="text-muted">Click to view details</small></div>`
+      });
+      
+      google.maps.event.addListener(polygon, 'click', function() {
+        infoWindow.setPosition(polygon.getPath().getAt(0));
+        infoWindow.open(map);
+      });
+      
+      path.forEach(p => bounds.extend(new google.maps.LatLng(p.lat, p.lng)));
+    });
+    
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds);
+    }
+  }
+  
+  function showPolygonInfo(coordinates) {
+    const infoDiv = document.createElement('div');
+    infoDiv.innerHTML = `
+      <div class="alert alert-info">
+        <h6><i class="fas fa-draw-polygon me-2"></i>New Polygon Created!</h6>
+        <p class="mb-2">Coordinates: ${coordinates.length} points</p>
+        <div class="mb-2">
+          <button class="btn btn-sm btn-success me-2" onclick="savePolygonAsGeofence()">
+            <i class="fas fa-save me-1"></i>Save as Geo-fence
+          </button>
+          <button class="btn btn-sm btn-warning" onclick="clearCurrentPolygon()">
+            <i class="fas fa-times me-1"></i>Clear
+          </button>
+        </div>
+        <small class="text-muted">Click "Save as Geo-fence" to create a new geo-fence with these coordinates.</small>
+      </div>
+    `;
+    
+    // Insert info above the map
+    const mapContainer = document.getElementById('staffMap');
+    mapContainer.parentNode.insertBefore(infoDiv, mapContainer);
+  }
+  
+  // Global functions for polygon management
+  window.savePolygonAsGeofence = function() {
+    if (currentPolygon) {
+      const path = currentPolygon.getPath();
+      const coordinates = [];
+      for (let i = 0; i < path.getLength(); i++) {
+        const point = path.getAt(i);
+        coordinates.push({
+          lat: point.lat(),
+          lng: point.lng()
+        });
+      }
+      
+      // Redirect to geo-fence creation with coordinates
+      const coordsJson = encodeURIComponent(JSON.stringify(coordinates));
+      window.location.href = `{% url 'adminview:geofence_create' %}?coordinates=${coordsJson}`;
+    }
+  };
+  
+  window.clearCurrentPolygon = function() {
+    if (currentPolygon) {
+      currentPolygon.setMap(null);
+      currentPolygon = null;
+    }
+    // Remove info div
+    const infoDiv = document.querySelector('.alert-info');
+    if (infoDiv) {
+      infoDiv.remove();
+    }
+  };
+  
+  if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+<script>
+// Auto-refresh staff metrics via JSON API (every 60s)
+(function(){
+  function applyMetrics(data){
+    const c = document.getElementById('staff-classes-count');
+    const s = document.getElementById('staff-total-students');
+    const t = document.getElementById('staff-today-attendance');
+    if (c && typeof data.classes_count !== 'undefined') c.textContent = data.classes_count;
+    if (s && typeof data.total_students !== 'undefined') s.textContent = data.total_students;
+    if (t && typeof data.today_attendance !== 'undefined') t.textContent = data.today_attendance;
+  }
+  async function refresh(){
+    try{
+      const res = await fetch('{% url "adminview:staff_home_metrics" %}', {headers: {"X-Requested-With":"XMLHttpRequest"}});
+      if (!res.ok) return;
+      const data = await res.json();
+      applyMetrics(data);
+    }catch(e){ /* ignore transient errors */ }
+  }
+  refresh();
+  setInterval(refresh, 60000);
+})();
+</script>
+{% endblock %}

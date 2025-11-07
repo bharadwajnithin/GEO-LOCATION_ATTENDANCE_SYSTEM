@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Class - Attendance System{% endblock %}
+
+{% block content %}
+<h3 class="mb-3 text-danger"><i class="fas fa-trash me-2"></i>Delete Class</h3>
+<div class="card">
+  <div class="card-body">
+    <p>Are you sure you want to delete class <strong>{{ class_instance.name }}</strong>?</p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Delete</button>
+      <a href="{% url 'adminview:class_list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

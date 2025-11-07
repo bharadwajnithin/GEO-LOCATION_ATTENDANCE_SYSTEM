@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% block title %}Enroll Face - Attendance System{% endblock %}
+{% block content %}
+<h3 class="mb-3"><i class="fas fa-camera me-2"></i>Enroll Your Face</h3>
+<div class="card">
+  <div class="card-body">
+    <p class="text-muted mb-3">Please position your face in the frame and slowly turn left/right and blink. We will capture multiple images to build a reliable template.</p>
+    <div class="row g-3 align-items-center">
+      <div class="col-md-7">
+        <div class="ratio ratio-16x9 bg-dark rounded">
+          <video id="enrollVideo" autoplay playsinline muted class="rounded" style="object-fit: cover;"></video>
+        </div>
+      </div>
+      <div class="col-md-5">
+        <div class="border rounded p-3 h-100">
+          <div class="mb-2">
+            <strong>Status:</strong> <span id="statusText" class="text-muted">Initializing camera…</span>
+          </div>
+          <div class="mb-2">
+            <strong>Captured frames:</strong> <span id="counter">0</span> / <span id="target">12</span>
+          </div>
+          <div class="progress mb-3" style="height: 8px;">
+            <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+          </div>
+          <button id="startBtn" class="btn btn-primary w-100 mb-2"><i class="fas fa-play me-1"></i>Start Capture</button>
+          <button id="cancelBtn" class="btn btn-secondary w-100" disabled><i class="fas fa-stop me-1"></i>Cancel</button>
+        </div>
+      </div>
+    </div>
+    <small class="text-muted d-block mt-3">Your face data is stored as numerical embeddings only, not raw photos.</small>
+  </div>
+</div>
+
+<canvas id="hiddenCanvas" class="d-none"></canvas>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  const video = document.getElementById('enrollVideo');
+  const canvas = document.getElementById('hiddenCanvas');
+  const ctx = canvas.getContext('2d');
+  const statusText = document.getElementById('statusText');
+  const progressBar = document.getElementById('progressBar');
+  const counterEl = document.getElementById('counter');
+  const targetEl = document.getElementById('target');
+  const startBtn = document.getElementById('startBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+
+  const TARGET_FRAMES = 12; // capture count
+  targetEl.textContent = TARGET_FRAMES;
+  let captured = 0;
+  let running = false;
+  let lastFrameData = null;
+
+  function setStatus(msg, klass){
+    statusText.textContent = msg;
+    statusText.className = klass || 'text-muted';
+  }
+
+  async function initCamera(){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: {ideal: 640}, height: {ideal: 480} }, audio: false });
+      video.srcObject = stream;
+      setStatus('Camera ready. Click Start to begin capture.', 'text-success');
+      startBtn.disabled = false;
+    }catch(e){
+      setStatus('Unable to access camera: ' + e.message, 'text-danger');
+      startBtn.disabled = true;
+    }
+  }
+
+  function getDataUrl(){
+    const w = video.videoWidth || 640;
+    const h = video.videoHeight || 480;
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(video, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  }
+
+  // Simple motion heuristic: compare successive frames to avoid identical captures
+  function motionDetected(curr){
+    if (!lastFrameData) { lastFrameData = curr; return true; }
+    // Compare small samples for speed
+    try{
+      const a = atob(lastFrameData.split(',')[1]);
+      const b = atob(curr.split(',')[1]);
+      let diff = 0; const step = Math.floor(Math.min(a.length, b.length) / 2000) || 1;
+      for(let i=0;i<Math.min(a.length,b.length); i+=step){ if(a.charCodeAt(i) !== b.charCodeAt(i)) { diff++; if(diff>200) break; } }
+      lastFrameData = curr;
+      return diff > 200; // require some change
+    }catch{ lastFrameData = curr; return true; }
+  }
+
+  async function startCapture(){
+    if (running) return; running = true; captured = 0; lastFrameData = null;
+    setStatus('Capturing… slowly turn your head and blink.', 'text-primary');
+    startBtn.disabled = true; cancelBtn.disabled = false;
+    counterEl.textContent = '0'; progressBar.style.width = '0%';
+
+    const images = [];
+    const startTime = Date.now();
+
+    const loop = async () => {
+      if (!running) return;
+      const frame = getDataUrl();
+      if (motionDetected(frame)){
+        images.push(frame);
+        captured++;
+        counterEl.textContent = String(captured);
+        progressBar.style.width = Math.round(captured/TARGET_FRAMES*100) + '%';
+      }
+      if (captured >= TARGET_FRAMES){
+        running = false;
+        setStatus('Uploading and training…', 'text-primary');
+        cancelBtn.disabled = true;
+        await upload(images);
+        return;
+      }
+      // ~6 FPS effective sampling
+      const elapsed = Date.now() - startTime;
+      const delay = elapsed < 1500 ? 300 : 200; // a bit slower after first seconds
+      setTimeout(loop, delay);
+    };
+    loop();
+  }
+
+  async function upload(images){
+    try{
+      const res = await fetch('{% url "userview:save_face_enroll" %}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success){
+        throw new Error(data.error || 'Failed to save face data');
+      }
+      setStatus('Enrollment complete! Redirecting…', 'text-success');
+      setTimeout(()=>{ window.location.href = '{% url "userview:student_home" %}'; }, 800);
+    }catch(e){
+      setStatus('Enrollment failed: ' + e.message, 'text-danger');
+      startBtn.disabled = false; cancelBtn.disabled = true;
+    }
+  }
+
+  function cancel(){ running = false; cancelBtn.disabled = true; startBtn.disabled = false; setStatus('Capture canceled.', 'text-warning'); }
+
+  startBtn.addEventListener('click', startCapture);
+  cancelBtn.addEventListener('click', cancel);
+  if (document.readyState !== 'loading') initCamera(); else document.addEventListener('DOMContentLoaded', initCamera);
+})();
+</script>
+{% endblock %}

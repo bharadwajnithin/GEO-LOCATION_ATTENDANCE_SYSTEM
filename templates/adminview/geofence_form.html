@@ -1,0 +1,264 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title|default:'Geo-fence' }} - Attendance System{% endblock %}
+
+{% block content %}
+<h3 class="mb-3"><i class="fas fa-map me-2"></i>{{ title|default:'Geo-fence' }}</h3>
+<div class="card">
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="mb-3">{{ form.name.label_tag }} {{ form.name }}</div>
+      {{ form.coordinates_json }}
+      
+      <!-- Location Search Box -->
+      <div class="mb-3">
+        <label class="form-label">
+          <i class="fas fa-search me-1"></i>Search Location
+        </label>
+        <div class="input-group">
+          <input type="text" id="locationSearch" class="form-control" placeholder="Enter address, city, or landmark...">
+          <button type="button" id="searchBtn" class="btn btn-outline-primary">
+            <i class="fas fa-search"></i> Search
+          </button>
+          <button type="button" id="useCurrentLocation" class="btn btn-outline-secondary">
+            <i class="fas fa-crosshairs"></i> Use My Location
+          </button>
+        </div>
+        <small class="text-muted">Search for a location to center the map, then draw your geo-fence polygon.</small>
+      </div>
+      
+      <div class="mb-3">
+        <div id="map" style="height: 320px; border-radius: 8px; border: 1px solid #dee2e6;"></div>
+        <small class="text-muted">Draw a polygon on the map to define the geo-fence.</small>
+      </div>
+      <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save</button>
+      <a href="{% url 'adminview:geofence_list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Debug info removed -->
+
+{% if google_maps_api_key %}
+<!-- Google Maps API -->
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=drawing,places&v=weekly" async defer></script>
+<script>
+(function(){
+  const field = document.getElementById('id_coordinates_json');
+  const searchInput = document.getElementById('locationSearch');
+  const searchBtn = document.getElementById('searchBtn');
+  const useCurrentLocationBtn = document.getElementById('useCurrentLocation');
+  let map, drawingManager, polygon = null, geocoder, searchBox;
+
+  function init(){
+    
+    // Check if map container exists
+    const mapContainer = document.getElementById('map');
+    if (!mapContainer) {
+      console.error('Map container not found!');
+      return;
+    }
+    
+    // Initialize map
+    map = new google.maps.Map(mapContainer, { 
+      center: {lat: 0, lng: 0}, 
+      zoom: 2,
+      mapTypeControl: true,
+      streetViewControl: true,
+      fullscreenControl: true
+    });
+    
+    
+    
+    // Initialize drawing manager
+    drawingManager = new google.maps.drawing.DrawingManager({ 
+      drawingMode: google.maps.drawing.OverlayType.POLYGON, 
+      drawingControl: true,
+      drawingControlOptions: {
+        position: google.maps.ControlPosition.TOP_CENTER,
+        drawingModes: [google.maps.drawing.OverlayType.POLYGON]
+      }
+    });
+    drawingManager.setMap(map);
+    
+    // Initialize geocoder for search
+    geocoder = new google.maps.Geocoder();
+    
+    // Initialize search box
+    searchBox = new google.maps.places.SearchBox(searchInput);
+    
+    // Event listeners
+    google.maps.event.addListener(drawingManager, 'overlaycomplete', function(e){
+      if (polygon) polygon.setMap(null);
+      polygon = e.overlay;
+      drawingManager.setDrawingMode(null);
+      saveCoords();
+    });
+    
+    // Search button click
+    searchBtn.addEventListener('click', performSearch);
+    
+    // Enter key in search input
+    searchInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        performSearch();
+      }
+    });
+    
+    // Use current location button
+    useCurrentLocationBtn.addEventListener('click', useCurrentLocation);
+    
+    // Search box place changed
+    searchBox.addListener('places_changed', function() {
+      const places = searchBox.getPlaces();
+      if (places.length === 0) return;
+      
+      const place = places[0];
+      if (!place.geometry) {
+        alert('No location found for: ' + place.name);
+        return;
+      }
+      
+      // Center map on searched location
+      if (place.geometry.viewport) {
+        map.fitBounds(place.geometry.viewport);
+      } else {
+        map.setCenter(place.geometry.location);
+        map.setZoom(15);
+      }
+      
+      // Add marker for searched location
+      new google.maps.Marker({
+        map: map,
+        position: place.geometry.location,
+        title: place.name,
+        animation: google.maps.Animation.DROP
+      });
+    });
+    
+    
+  }
+  
+  function performSearch() {
+    const address = searchInput.value.trim();
+    if (!address) {
+      alert('Please enter a location to search for.');
+      return;
+    }
+    
+    geocoder.geocode({ address: address }, function(results, status) {
+      if (status === 'OK') {
+        const result = results[0];
+        map.setCenter(result.geometry.location);
+        map.setZoom(15);
+        
+        // Add marker for searched location
+        new google.maps.Marker({
+          map: map,
+          position: result.geometry.location,
+          title: result.formatted_address,
+          animation: google.maps.Animation.DROP
+        });
+        
+        // Clear search input
+        searchInput.value = result.formatted_address;
+      } else {
+        alert('Geocode was not successful for the following reason: ' + status);
+      }
+    });
+  }
+  
+  function useCurrentLocation() {
+    if (navigator.geolocation) {
+      useCurrentLocationBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Locating...';
+      useCurrentLocationBtn.disabled = true;
+      
+      navigator.geolocation.getCurrentPosition(
+        function(position) {
+          const pos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+          
+          map.setCenter(pos);
+          map.setZoom(16);
+          
+          // Add marker for current location
+          new google.maps.Marker({
+            map: map,
+            position: pos,
+            title: 'Your Current Location',
+            icon: {
+              url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+            },
+            animation: google.maps.Animation.DROP
+          });
+          
+          // Reverse geocode to get address
+          geocoder.geocode({ location: pos }, function(results, status) {
+            if (status === 'OK' && results[0]) {
+              searchInput.value = results[0].formatted_address;
+            }
+          });
+          
+          useCurrentLocationBtn.innerHTML = '<i class="fas fa-crosshairs"></i> Use My Location';
+          useCurrentLocationBtn.disabled = false;
+        },
+        function() {
+          alert('Error: The Geolocation service failed.');
+          useCurrentLocationBtn.innerHTML = '<i class="fas fa-crosshairs"></i> Use My Location';
+          useCurrentLocationBtn.disabled = false;
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000
+        }
+      );
+    } else {
+      alert('Geolocation is not supported by this browser.');
+    }
+  }
+  
+  function saveCoords(){
+    if (!polygon) return;
+    const path = polygon.getPath();
+    const coords = [];
+    for (let i=0; i<path.getLength(); i++){
+      const p = path.getAt(i);
+      coords.push({lat: p.lat(), lng: p.lng()});
+    }
+    field.value = JSON.stringify(coords);
+  }
+  
+  // Initialize map when Google Maps API is loaded
+  if (typeof google !== 'undefined' && google.maps) {
+    console.log('Google Maps API already loaded, initializing...');
+    init();
+  } else {
+    console.log('Waiting for Google Maps API to load...');
+    window.initMap = init;
+  }
+  
+  // Fallback initialization
+  if (document.readyState !== 'loading') {
+    setTimeout(init, 1000); // Wait a bit for API to load
+  } else {
+    document.addEventListener('DOMContentLoaded', function() {
+      setTimeout(init, 1000); // Wait a bit for API to load
+    });
+  }
+})();
+</script>
+{% else %}
+<script>
+console.error('Google Maps API key not available!');
+document.getElementById('map').innerHTML = '<div class="alert alert-warning text-center py-5"><i class="fas fa-exclamation-triangle fa-2x mb-3"></i><br><strong>Google Maps Not Available</strong><br><small>Please check your Google Maps API key configuration.</small></div>';
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,1322 @@
+{% extends 'base.html' %}
+{% load userview_extras %}
+
+{% block title %}Student Dashboard - Attendance System{% endblock %}
+
+{% block extra_css %}
+<style>
+    .camera-container {
+        position: relative;
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto;
+    }
+    
+    #video {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        border: 2px solid #007bff;
+    }
+    
+    .attendance-card {
+        transition: transform 0.2s;
+    }
+    
+    .attendance-card:hover {
+        transform: translateY(-2px);
+    }
+    
+    .status-badge {
+        font-size: 0.8rem;
+    }
+    
+    .location-info {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .btn-attendance {
+        min-height: 60px;
+        font-size: 1.1rem;
+    }
+    
+    .geofence-status {
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-weight: 500;
+        text-align: center;
+    }
+    
+    .geofence-inside {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+    
+    .geofence-outside {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+    
+    .geofence-unknown {
+        background-color: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+    }
+    
+    /* Enhanced Location Cards */
+    .location-card {
+        background: #ffffff;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 15px;
+        height: 100%;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .location-card h6 {
+        color: #495057;
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+        font-weight: 600;
+    }
+    
+    .status-indicator {
+        text-align: center;
+    }
+    
+    /* Map Container Styles */
+    .map-container {
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .map-loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+    
+    .map-controls {
+        display: flex;
+        gap: 8px;
+    }
+    
+    /* Enhanced Camera Styles */
+    .camera-placeholder {
+        background: #f8f9fa;
+        border: 2px dashed #dee2e6;
+        border-radius: 8px;
+        padding: 40px;
+        min-height: 300px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .camera-overlay {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 123, 255, 0.9);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        z-index: 100;
+    }
+    
+    .overlay-content {
+        display: flex;
+        align-items: center;
+    }
+    
+    .verification-status {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid #e9ecef;
+    }
+    
+    /* Attendance Button Enhancements */
+    .btn-attendance {
+        min-height: 70px;
+        font-size: 1rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-attendance:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    
+    .btn-attendance:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+    
+    /* Status Badge Enhancements */
+    .badge {
+        font-size: 0.75rem;
+        padding: 6px 10px;
+    }
+    
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .location-card {
+            margin-bottom: 15px;
+        }
+        
+        .map-controls {
+            flex-direction: column;
+            width: 100%;
+        }
+        
+        .map-controls .btn {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        
+        .camera-controls {
+            text-align: center;
+        }
+        
+        .camera-controls .btn {
+            margin-bottom: 10px;
+            width: 100%;
+        }
+        
+        .status-indicator {
+            text-align: center;
+        }
+        
+        /* Map Container Styles */
+        .map-container {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .map-loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .map-controls {
+            display: flex;
+            gap: 8px;
+        }
+        
+        /* Enhanced Camera Styles */
+        .camera-placeholder {
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 40px;
+            min-height: 300px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .camera-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 123, 255, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 100;
+        }
+        
+        .overlay-content {
+            display: flex;
+            align-items: center;
+        }
+        
+        .verification-status {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+        }
+        
+        /* Attendance Button Enhancements */
+        .btn-attendance {
+            min-height: 70px;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-attendance:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .btn-attendance:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        /* Status Badge Enhancements */
+        .badge {
+            font-size: 0.75rem;
+            padding: 6px 10px;
+        }
+        
+        }
+    </style>
+    {% endblock %}
+
+{% block content %}
+<!-- Class Selection -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="d-flex align-items-end flex-wrap" style="gap: 12px;">
+            <div>
+                <label for="selectedClass" class="form-label mb-0"><i class="fas fa-list me-2"></i>Select Class</label>
+                <select id="selectedClass" class="form-select" style="min-width: 260px; max-width: 420px;">
+                    <option value="">-- Choose your class to proceed --</option>
+                    {% for class in enrolled_classes %}
+                    <option value="{{ class.id }}">{{ class.name }} — {{ class.geolocation.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <small class="text-muted">Select a class to enable the corresponding Mark Attendance button and show its geo-fence.</small>
+        </div>
+        <hr class="mt-3"/>
+    </div>
+    
+</div>
+<!-- Enhanced Location Information & Geo-fence Status -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="location-info" data-enrolled-geofences='{{ enrolled_geofences_json|default:"[]"|safe }}'>
+            <h5><i class="fas fa-map-marker-alt me-2"></i>Live Location & Geo-fence Status</h5>
+            
+            <!-- Real-time Location Display -->
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <div class="location-card">
+                        <h6><i class="fas fa-crosshairs me-2"></i>Current Location</h6>
+                        <p class="mb-1"><strong>Latitude:</strong> <span id="latitude" class="text-primary">Detecting...</span></p>
+                        <p class="mb-1"><strong>Longitude:</strong> <span id="longitude" class="text-primary">Detecting...</span></p>
+                        <p class="mb-0"><strong>Accuracy:</strong> <span id="accuracy" class="text-info">--</span> meters</p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="location-card">
+                        <h6><i class="fas fa-shield-alt me-2"></i>Location Status</h6>
+                        <div id="location-status" class="status-indicator">
+                            <span class="badge bg-warning">Detecting Location</span>
+                        </div>
+                        <div id="location-details" class="mt-2">
+                            <small class="text-muted">Waiting for GPS signal...</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="location-card">
+                        <h6><i class="fas fa-map-marked-alt me-2"></i>Nearest Class</h6>
+                        <div id="nearest-class">
+                            <span class="text-muted">Calculating...</span>
+                        </div>
+                        <div id="distance-to-class" class="mt-1">
+                            <small class="text-muted">--</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="location-card">
+                        <h6><i class="fas fa-check-circle me-2"></i>Attendance Ready</h6>
+                        <div id="attendance-ready-status">
+                            <span class="badge bg-secondary">Location Required</span>
+                        </div>
+                        <div id="ready-details" class="mt-1">
+                            <small class="text-muted">Get within geo-fence to mark attendance</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Interactive Map with Geo-fences -->
+            {% if google_maps_api_key %}
+            <div class="map-container">
+                <div class="map-header d-flex justify-content-between align-items-center mb-2">
+                    <h6><i class="fas fa-map me-2"></i>Live Location & Class Geo-fences</h6>
+                    <div class="map-controls">
+                        <button id="centerOnLocation" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-crosshairs me-1"></i>Center on Me
+                        </button>
+                        <button id="toggleGeofences" class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-eye me-1"></i>Toggle Geo-fences
+                        </button>
+                    </div>
+                </div>
+                <div id="studentMap" style="height: 400px; border-radius: 8px; border: 1px solid #dee2e6; position: relative;">
+                    <div id="mapLoading" class="map-loading-overlay">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading map...</span>
+                        </div>
+                        <p class="mt-2">Loading interactive map...</p>
+                    </div>
+                </div>
+                <div class="map-legend mt-2">
+                    <small class="text-muted">
+                        <i class="fas fa-circle text-primary me-1"></i>Your Location
+                        <i class="fas fa-square text-success me-1 ms-3"></i>Class Geo-fences
+                        <i class="fas fa-circle text-warning me-1 ms-3"></i>Attendance Zone
+                    </small>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Camera Feed for Attendance -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-camera me-2"></i>Face Recognition for Attendance
+                </h5>
+                <div class="camera-status">
+                    <span id="cameraStatus" class="badge bg-secondary">Camera Off</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Camera Controls -->
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="camera-controls">
+                            <button id="startCamera" class="btn btn-primary me-2">
+                                <i class="fas fa-play me-2"></i>Start Camera
+                            </button>
+                            <button id="stopCamera" class="btn btn-secondary me-2" disabled>
+                                <i class="fas fa-stop me-2"></i>Stop Camera
+                            </button>
+                            <button id="captureFace" class="btn btn-success" disabled>
+                                <i class="fas fa-camera me-2"></i>Capture Face
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="verification-status">
+                            <div class="d-flex align-items-center">
+                                <span class="me-2">Location:</span>
+                                <span id="locationVerification" class="badge bg-warning">Pending</span>
+                                <span class="ms-3 me-2">Face:</span>
+                                <span id="faceVerification" class="badge bg-secondary">Not Started</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Camera Display -->
+                <div class="camera-container text-center">
+                    <video id="video" autoplay muted style="display: none;"></video>
+                    <canvas id="canvas" style="display: none;"></canvas>
+                    <div id="cameraPlaceholder" class="camera-placeholder">
+                        <i class="fas fa-camera fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Click "Start Camera" to begin face recognition</p>
+                    </div>
+                    <div class="camera-overlay" style="display: none;">
+                        <div class="overlay-content">
+                            <i class="fas fa-circle text-success me-1"></i> Live
+                            <span class="ms-2" id="faceDetectionStatus">Detecting face...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Face Detection Feedback -->
+                <div id="faceDetectionFeedback" class="mt-3" style="display: none;">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <span id="faceDetectionMessage">Position your face in the camera view</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enrolled Classes -->
+<div class="row">
+    <div class="col-12">
+        <h4 class="mb-3">
+            <i class="fas fa-book me-2"></i>Your Enrolled Classes
+        </h4>
+        
+        {% if enrolled_classes %}
+            <div class="row">
+                {% for class in enrolled_classes %}
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card attendance-card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ class.name }}</h5>
+                            <p class="card-text">
+                                <small class="text-muted">
+                                    <i class="fas fa-chalkboard-teacher me-1"></i>
+                                    {{ class.staff.get_full_name }}
+                                </small>
+                            </p>
+                            <p class="card-text">
+                                <small class="text-muted">
+                                    <i class="fas fa-map-marker-alt me-1"></i>
+                                    {{ class.geolocation.name }}
+                                </small>
+                            </p>
+                            
+                            <!-- Attendance Status -->
+                            <div class="mb-3">
+                                {% if today_attendance|get_item:class.id == True %}
+                                    <span class="badge bg-success status-badge">
+                                        <i class="fas fa-check me-1"></i>Present Today
+                                    </span>
+                                {% elif today_attendance|get_item:class.id == False %}
+                                    <span class="badge bg-danger status-badge">
+                                        <i class="fas fa-times me-1"></i>Absent Today
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary status-badge">
+                                        <i class="fas fa-clock me-1"></i>Not Marked Today
+                                    </span>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Enhanced Mark Attendance Button -->
+                            {% if today_attendance|get_item:class.id == True %}
+                                <button class="btn btn-success btn-attendance w-100" disabled>
+                                    <i class="fas fa-check me-2"></i>Attendance Marked
+                                    <small class="d-block mt-1">Already marked today</small>
+                                </button>
+                            {% else %}
+                                <button class="btn btn-primary btn-attendance w-100" 
+                                        onclick="initiateAttendanceProcess('{{ class.id }}', '{{ class.name }}')"
+                                        data-class-id="{{ class.id }}"
+                                        id="attendanceBtn-{{ class.id }}">
+                                    <i class="fas fa-map-marker-alt me-2"></i>Mark Attendance
+                                    <small class="d-block mt-1">Location + Face verification required</small>
+                                </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                You are not enrolled in any classes yet. Please contact your administrator.
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Attendance Modal -->
+<div class="modal fade" id="attendanceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Marking Attendance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="attendanceStatus">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Processing attendance...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+{% if google_maps_api_key %}
+<!-- Google Maps API -->
+<script>
+  // Expose a global callback to be invoked by Google Maps script
+  window.__studentMapsReady = false;
+  window.onStudentMapsLoaded = function() {
+    window.__studentMapsReady = true;
+    if (typeof initMap === 'function') {
+      try { initMap(); } catch (e) {}
+    }
+  };
+  // Fallback: ensure flag exists even if script fails
+  if (typeof window.__studentMapsReady === 'undefined') { window.__studentMapsReady = false; }
+  </script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places,drawing&v=weekly&callback=onStudentMapsLoaded" async defer></script>
+{% endif %}
+<script>
+// Enhanced Student Dashboard with Complete Attendance Workflow
+(function(){
+  // Global variables
+  let studentMap = null;
+  let currentLocationMarker = null;
+  let geofencePolygons = [];
+  let currentLocation = null;
+  let enrolledClasses = {{ enrolled_geofences_json|default:'[]'|safe }};
+  let currentStream = null;
+  let selectedClassId = null;
+  let selectedClassName = null;
+  let isLocationVerified = false;
+  let isFaceVerified = false;
+  
+  // Initialize the enhanced dashboard
+  function init() {
+    console.log('Initializing Enhanced Student Dashboard...');
+    
+    // Initialize map if API key is available
+    if (typeof google !== 'undefined' && google.maps) {
+      initMap();
+    } else if (document.getElementById('studentMap')) {
+      // Show loading message if Google Maps is not available
+      document.getElementById('mapLoading').innerHTML = 
+        '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle me-2"></i>Google Maps API key not configured</div>';
+
+      // Retry to initialize map in case the Google script loads after this code
+      try {
+        let tries = 0;
+        const maxTries = 30; // ~15s total with 500ms interval
+        const timer = setInterval(() => {
+          if (typeof google !== 'undefined' && google.maps) {
+            clearInterval(timer);
+            // Clear warning and init map
+            const loadingOverlay = document.getElementById('mapLoading');
+            if (loadingOverlay) loadingOverlay.innerHTML = '';
+            initMap();
+          } else if (++tries >= maxTries) {
+            clearInterval(timer);
+          }
+        }, 500);
+      } catch (e) { /* no-op */ }
+    }
+    
+    // Initialize camera controls
+    initCameraControls();
+    
+    // Start location tracking
+    startLocationTracking();
+    
+    // Initialize attendance buttons
+    initAttendanceButtons();
+
+    // Initialize class selector
+    initClassSelector();
+  }
+  
+  // Initialize Google Maps
+  function initMap() {
+    if (!document.getElementById('studentMap')) return;
+    
+    studentMap = new google.maps.Map(document.getElementById('studentMap'), {
+      center: {lat: 0, lng: 0},
+      zoom: 2,
+      mapTypeControl: true,
+      streetViewControl: true,
+      fullscreenControl: true,
+      zoomControl: true
+    });
+    
+    // Hide loading overlay
+    const loadingOverlay = document.getElementById('mapLoading');
+    if (loadingOverlay) {
+      loadingOverlay.style.display = 'none';
+    }
+    
+    // Display enrolled class geo-fences
+    displayClassGeofences();
+    
+    // Initialize map controls
+    initMapControls();
+  }
+  
+  // Display class geo-fences on map
+  function displayClassGeofences() {
+    if (!studentMap || !enrolledClasses.length) return;
+    
+    const bounds = new google.maps.LatLngBounds();
+    
+    // Clear previous polygons
+    geofencePolygons.forEach(p => p.setMap(null));
+    geofencePolygons = [];
+
+    // Filter by selected class if any
+    const classesToShow = selectedClassId
+      ? enrolledClasses.filter(c => {
+          const cid = String(c.class_id || c.id || '');
+          return cid === String(selectedClassId);
+        })
+      : enrolledClasses;
+
+    classesToShow.forEach((classData, index) => {
+      if (!classData.coordinates || !classData.coordinates.length) return;
+      
+      const path = classData.coordinates.map(c => ({lat: c.lat, lng: c.lng}));
+      
+      // Create polygon for geo-fence
+      const polygon = new google.maps.Polygon({
+        paths: path,
+        strokeColor: getClassColor(index),
+        fillColor: getClassColor(index),
+        fillOpacity: 0.2,
+        strokeOpacity: 0.8,
+        strokeWeight: 3,
+        strokeDashArray: [5, 5]
+      });
+      
+      polygon.setMap(studentMap);
+      geofencePolygons.push(polygon);
+      
+      // Add info window
+      const infoWindow = new google.maps.InfoWindow({
+        content: `
+          <div class="text-center">
+            <h6><i class="fas fa-graduation-cap me-2"></i>${classData.class_name}</h6>
+            <p class="mb-2"><strong>Geo-fence:</strong> ${classData.geofence_name}</p>
+            <div class="mb-2">
+              <span class="badge bg-primary">${classData.coordinates.length} points</span>
+            </div>
+            <small class="text-muted">Click to view details</small>
+          </div>
+        `
+      });
+      
+      google.maps.event.addListener(polygon, 'click', function() {
+        infoWindow.setPosition(polygon.getPath().getAt(0));
+        infoWindow.open(studentMap);
+      });
+      
+      // Add class marker
+      const center = getPolygonCenter(path);
+      const classMarker = new google.maps.Marker({
+        position: center,
+        map: studentMap,
+        title: classData.class_name,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: getClassColor(index),
+          fillOpacity: 0.8,
+          strokeColor: '#ffffff',
+          strokeWeight: 2
+        },
+        label: {
+          text: classData.class_name.charAt(0).toUpperCase(),
+          color: '#ffffff',
+          fontWeight: 'bold'
+        }
+      });
+      
+      path.forEach(p => bounds.extend(new google.maps.LatLng(p.lat, p.lng)));
+      bounds.extend(center);
+    });
+    
+    if (!bounds.isEmpty()) {
+      studentMap.fitBounds(bounds);
+      const listener = google.maps.event.addListener(studentMap, 'idle', function() {
+        if (studentMap.getZoom() > 15) studentMap.setZoom(15);
+        google.maps.event.removeListener(listener);
+      });
+    }
+  }
+  
+  // Initialize map controls
+  function initMapControls() {
+    // Center on location button
+    const centerBtn = document.getElementById('centerOnLocation');
+    if (centerBtn) {
+      centerBtn.addEventListener('click', function() {
+        if (currentLocation && studentMap) {
+          studentMap.setCenter(currentLocation);
+          studentMap.setZoom(16);
+        }
+      });
+    }
+    
+    // Toggle geo-fences button
+    const toggleBtn = document.getElementById('toggleGeofences');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', function() {
+        geofencePolygons.forEach(polygon => {
+          polygon.setVisible(!polygon.getVisible());
+        });
+      });
+    }
+  }
+  
+  // Start location tracking
+  function startLocationTracking() {
+    if (!navigator.geolocation) {
+      updateLocationStatus('error', 'Geolocation not supported');
+      return;
+    }
+    
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 30000
+    };
+    
+    navigator.geolocation.getCurrentPosition(
+      function(position) {
+        handleLocationSuccess(position);
+      },
+      function(error) {
+        handleLocationError(error);
+      },
+      options
+    );
+    
+    // Update location every 30 seconds
+    setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        function(position) {
+          handleLocationSuccess(position);
+        },
+        function(error) {
+          console.log('Location update failed:', error);
+        },
+        options
+      );
+    }, 30000);
+  }
+  
+  // Handle successful location
+  function handleLocationSuccess(position) {
+    currentLocation = {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude
+    };
+    
+    // Update location display
+    document.getElementById('latitude').textContent = currentLocation.lat.toFixed(6);
+    document.getElementById('longitude').textContent = currentLocation.lng.toFixed(6);
+    document.getElementById('accuracy').textContent = Math.round(position.coords.accuracy);
+    
+    // Update location marker on map
+    if (studentMap) {
+      if (currentLocationMarker) {
+        currentLocationMarker.setMap(null);
+      }
+      
+      currentLocationMarker = new google.maps.Marker({
+        map: studentMap,
+        position: currentLocation,
+        title: 'Your Current Location',
+        icon: {
+          url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+        },
+        animation: google.maps.Animation.DROP
+      });
+    }
+    
+    // Check geo-fence status
+    checkGeofenceStatus();
+    
+    // Update location status
+    updateLocationStatus('success', 'Location detected successfully');
+  }
+  
+  // Handle location error
+  function handleLocationError(error) {
+    let message = 'Location access denied';
+    switch(error.code) {
+      case error.PERMISSION_DENIED:
+        message = 'Location access denied by user';
+        break;
+    }
+    updateLocationStatus('error', message);
+  }
+
+  // Check geo-fence status against the selected class
+  function checkGeofenceStatus() {
+    if (!currentLocation) return;
+    if (!selectedClassId) {
+      isLocationVerified = false;
+      const lc = document.getElementById('location-details');
+      if (lc) lc.innerHTML = '<small class="text-muted">Select a class to check geofence</small>';
+      updateAttendanceReadyStatus('secondary', 'Select a class to proceed');
+      updateLocationVerification('warning');
+      return;
+    }
+
+    // Get selected class
+    const klass = (enrolledClasses || []).find(c => String(c.class_id || c.id || '') === String(selectedClassId));
+    if (!klass || !klass.coordinates || !klass.coordinates.length) {
+      isLocationVerified = false;
+      updateAttendanceReadyStatus('warning', 'Selected class has no geo-fence');
+      updateLocationVerification('warning');
+      document.getElementById('distance-to-class').innerHTML = '<small class="text-muted">--</small>';
+      return;
+    }
+
+    const isInside = isPointInPolygon(currentLocation, klass.coordinates);
+    const distance = calculateDistanceToPolygon(currentLocation, klass.coordinates);
+
+    // Update display for selected class
+    document.getElementById('nearest-class').innerHTML = `<strong>${klass.class_name || selectedClassName || 'Selected class'}</strong>`;
+    document.getElementById('distance-to-class').innerHTML = `<small class="text-muted">${Math.round(distance)}m away</small>`;
+
+    if (isInside) {
+      isLocationVerified = true;
+      updateAttendanceReadyStatus('success', 'Ready to mark attendance');
+      updateLocationVerification('success');
+    } else {
+      isLocationVerified = false;
+      updateAttendanceReadyStatus('warning', 'Move within selected class geo-fence');
+      updateLocationVerification('warning');
+    }
+  }
+  
+  
+  // Initialize camera controls
+  function initCameraControls() {
+    const startBtn = document.getElementById('startCamera');
+    const stopBtn = document.getElementById('stopCamera');
+    const captureBtn = document.getElementById('captureFace');
+    
+    if (startBtn) {
+      startBtn.addEventListener('click', startCamera);
+    }
+    
+    if (stopBtn) {
+      stopBtn.addEventListener('click', stopCamera);
+    }
+    
+    if (captureBtn) {
+      captureBtn.addEventListener('click', captureFace);
+    }
+  }
+  
+  // Start camera
+  async function startCamera() {
+    try {
+      currentStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: 640, 
+          height: 480,
+          facingMode: 'user'
+        } 
+      });
+      
+      const video = document.getElementById('video');
+      const placeholder = document.getElementById('cameraPlaceholder');
+      const overlay = document.querySelector('.camera-overlay');
+      
+      video.srcObject = currentStream;
+      video.style.display = 'block';
+      placeholder.style.display = 'none';
+      overlay.style.display = 'block';
+      
+      // Update UI
+      document.getElementById('cameraStatus').textContent = 'Camera On';
+      document.getElementById('cameraStatus').className = 'badge bg-success';
+      document.getElementById('startCamera').disabled = true;
+      document.getElementById('stopCamera').disabled = false;
+      
+      // Enable capture button if location is verified
+      if (isLocationVerified) {
+        document.getElementById('captureFace').disabled = false;
+      }
+      
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      alert('Error accessing camera. Please check permissions.');
+    }
+  }
+  
+  // Stop camera
+  function stopCamera() {
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => track.stop());
+      currentStream = null;
+    }
+    
+    const video = document.getElementById('video');
+    const placeholder = document.getElementById('cameraPlaceholder');
+    const overlay = document.querySelector('.camera-overlay');
+    
+    video.style.display = 'none';
+    placeholder.style.display = 'flex';
+    overlay.style.display = 'none';
+    
+    // Update UI
+    document.getElementById('cameraStatus').textContent = 'Camera Off';
+    document.getElementById('cameraStatus').className = 'badge bg-secondary';
+    document.getElementById('startCamera').disabled = false;
+    document.getElementById('stopCamera').disabled = true;
+    document.getElementById('captureFace').disabled = true;
+  }
+  
+  // Capture face for attendance
+  function captureFace() {
+    if (!currentStream || !selectedClassId) {
+      alert('Please select a class and ensure camera is running');
+      return;
+    }
+    
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+    
+    // Set canvas size to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // Draw current frame to canvas
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Convert to base64
+    const imageData = canvas.toDataURL('image/jpeg', 0.8);
+    
+    // Mark attendance
+    markAttendance(selectedClassId, selectedClassName, imageData);
+  }
+  
+  // Initialize attendance buttons
+  function initAttendanceButtons() {
+    // This will be called for each attendance button
+    console.log('Attendance buttons initialized');
+  }
+
+  // Class selector: populate, persist, and react to changes
+  function initClassSelector() {
+    const select = document.getElementById('selectedClass');
+    if (!select) return;
+    try {
+      const last = localStorage.getItem('selectedClassId');
+      if (last && Array.from(select.options).some(o => o.value === last)) {
+        select.value = last;
+        handleClassChange(last);
+      } else {
+        handleClassChange('');
+      }
+    } catch(e) {
+      handleClassChange('');
+    }
+
+    select.addEventListener('change', function(){
+      const val = this.value || '';
+      handleClassChange(val);
+      try { localStorage.setItem('selectedClassId', val); } catch(e) {}
+    });
+  }
+
+  function handleClassChange(val) {
+    selectedClassId = val || null;
+    selectedClassName = null;
+    if (selectedClassId) {
+      const match = (enrolledClasses || []).find(c => String(c.class_id || c.id || '') === String(selectedClassId));
+      if (match) selectedClassName = match.class_name || match.name || '';
+    }
+    // Enable only the matching attendance button
+    document.querySelectorAll('[id^="attendanceBtn-"]').forEach(btn => {
+      const cid = btn.getAttribute('data-class-id');
+      btn.disabled = !selectedClassId || String(cid) !== String(selectedClassId);
+    });
+    // Update polygons
+    if (studentMap) displayClassGeofences();
+    // Update labels
+    const nearest = document.getElementById('nearest-class');
+    if (nearest) nearest.innerHTML = selectedClassId ? `<strong>${selectedClassName || 'Selected class'}</strong>` : '<span class="text-muted">Select a class</span>';
+    const dist = document.getElementById('distance-to-class');
+    if (dist) dist.innerHTML = '<small class="text-muted">--</small>';
+    // Re-check status
+    checkGeofenceStatus();
+  }
+  
+  // Initiate attendance process
+  function initiateAttendanceProcess(classId, className) {
+    selectedClassId = classId;
+    selectedClassName = className;
+    
+    // Check if location is verified
+    if (!isLocationVerified) {
+      alert('Please move within the geo-fenced area for ' + className + ' to mark attendance.');
+      return;
+    }
+    
+    // Check if camera is running
+    if (!currentStream) {
+      alert('Please start the camera first to capture your face for verification.');
+      return;
+    }
+    
+    // Enable face capture
+    document.getElementById('captureFace').disabled = false;
+    updateFaceVerification('ready');
+    
+    // Show instructions
+    showAttendanceInstructions(className);
+  }
+  
+  // Mark attendance
+  async function markAttendance(classId, className, faceImageData) {
+    if (!currentLocation) {
+      alert('Location not available. Please refresh the page.');
+      return;
+    }
+    
+    // Show loading state
+    updateFaceVerification('processing');
+    
+    try {
+      const response = await fetch('{% url "userview:identify_mark_attendance" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+          class_id: classId,
+          face_image: faceImageData,
+          latitude: currentLocation.lat,
+          longitude: currentLocation.lng,
+          accuracy: document.getElementById('accuracy').textContent
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        updateFaceVerification('success');
+        showAttendanceSuccess(className, result);
+        
+        // Update attendance button
+        const btn = document.getElementById('attendanceBtn-' + classId);
+        if (btn) {
+          btn.innerHTML = '<i class="fas fa-check me-2"></i>Attendance Marked<br><small class="d-block mt-1">Already marked today</small>';
+          btn.className = 'btn btn-success btn-attendance w-100';
+          btn.disabled = true;
+        }
+      } else {
+        updateFaceVerification('error');
+        showAttendanceError(result.error || 'Attendance marking failed');
+      }
+      
+    } catch (error) {
+      console.error('Error marking attendance:', error);
+      updateFaceVerification('error');
+      showAttendanceError('Network error. Please try again.');
+    }
+  }
+  
+  // Utility functions
+  function getClassColor(index) {
+    const colors = ['#0d6efd', '#198754', '#dc3545', '#fd7e14', '#6f42c1', '#20c997', '#e83e8c', '#6c757d'];
+    return colors[index % colors.length];
+  }
+  
+  function getPolygonCenter(path) {
+    let lat = 0, lng = 0;
+    path.forEach(point => {
+      lat += point.lat;
+      lng += point.lng;
+    });
+    return { lat: lat / path.length, lng: lng / path.length };
+  }
+  
+  function isPointInPolygon(point, polygon) {
+    // Treat longitude as X and latitude as Y
+    const x = Number(point.lng), y = Number(point.lat);
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = Number(polygon[i].lng), yi = Number(polygon[i].lat);
+      const xj = Number(polygon[j].lng), yj = Number(polygon[j].lat);
+      const denom = (yj - yi) !== 0 ? (yj - yi) : 1e-12;
+      const intersects = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / denom + xi);
+      if (intersects) inside = !inside;
+    }
+    return inside;
+  }
+  
+  function calculateDistanceToPolygon(point, polygon) {
+    let minDistance = Infinity;
+    
+    for (let i = 0; i < polygon.length; i++) {
+      const p1 = polygon[i];
+      const p2 = polygon[(i + 1) % polygon.length];
+      
+      const distance = calculateDistanceToLineSegment(point, p1, p2);
+      minDistance = Math.min(minDistance, distance);
+    }
+    
+    return minDistance;
+  }
+  
+  function calculateDistanceToLineSegment(point, p1, p2) {
+    const A = point.lat - p1.lat;
+    const B = point.lng - p1.lng;
+    const C = p2.lat - p1.lat;
+    const D = p2.lng - p1.lng;
+    
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    
+    if (lenSq !== 0) {
+      param = dot / lenSq;
+    }
+    
+    let xx, yy;
+    
+    if (param < 0) {
+      xx = p1.lat;
+      yy = p1.lng;
+    } else if (param > 1) {
+      xx = p2.lat;
+      yy = p2.lng;
+    } else {
+      xx = p1.lat + param * C;
+      yy = p1.lng + param * D;
+    }
+    
+    const dx = point.lat - xx;
+    const dy = point.lng - yy;
+    return Math.sqrt(dx * dx + dy * dy) * 111000; // Convert to meters
+  }
+  
+  function updateLocationStatus(status, message) {
+    const statusElement = document.getElementById('location-status');
+    const detailsElement = document.getElementById('location-details');
+    
+    if (statusElement) {
+      statusElement.innerHTML = `<span class="badge bg-${status === 'success' ? 'success' : status === 'error' ? 'danger' : 'warning'}">${message}</span>`;
+    }
+    
+    if (detailsElement) {
+      detailsElement.innerHTML = `<small class="text-muted">${message}</small>`;
+    }
+  }
+  
+  function updateLocationVerification(status) {
+    const element = document.getElementById('locationVerification');
+    if (element) {
+      element.textContent = status === 'success' ? 'Verified' : 'Pending';
+      element.className = `badge bg-${status === 'success' ? 'success' : 'warning'}`;
+    }
+  }
+  
+  function updateFaceVerification(status) {
+    const element = document.getElementById('faceVerification');
+    if (element) {
+      switch(status) {
+        case 'ready':
+          element.textContent = 'Ready';
+          element.className = 'badge bg-info';
+          break;
+        case 'processing':
+          element.textContent = 'Processing';
+          element.className = 'badge bg-warning';
+          break;
+        case 'success':
+          element.textContent = 'Verified';
+          element.className = 'badge bg-success';
+          break;
+        case 'error':
+          element.textContent = 'Failed';
+          element.className = 'badge bg-danger';
+          break;
+        default:
+          element.textContent = 'Not Started';
+          element.className = 'badge bg-secondary';
+      }
+    }
+  }
+  
+  function updateAttendanceReadyStatus(status, message) {
+    const statusElement = document.getElementById('attendance-ready-status');
+    const detailsElement = document.getElementById('ready-details');
+    
+    if (statusElement) {
+      statusElement.innerHTML = `<span class="badge bg-${status === 'success' ? 'success' : 'warning'}">${status === 'success' ? 'Ready' : 'Not Ready'}</span>`;
+    }
+    
+    if (detailsElement) {
+      detailsElement.innerHTML = `<small class="text-muted">${message}</small>`;
+    }
+  }
+  
+  function showAttendanceInstructions(className) {
+    // Show modal or alert with instructions
+    alert(`Ready to mark attendance for ${className}!\n\n1. Ensure you're within the geo-fenced area\n2. Position your face in the camera view\n3. Click "Capture Face" when ready`);
+  }
+  
+  function showAttendanceSuccess(className, result) {
+    alert(`Attendance marked successfully for ${className}!\n\nVerification Details:\n- Face Similarity: ${result.verification_details?.face_similarity || 'N/A'}%\n- Location Accuracy: ${result.verification_details?.location_accuracy || 'N/A'}m`);
+  }
+  
+  function showAttendanceError(message) {
+    alert(`Attendance marking failed: ${message}`);
+  }
+  
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+  
+  // Make functions globally available
+  window.initiateAttendanceProcess = initiateAttendanceProcess;
+  
+  // Initialize when DOM is ready
+  if (document.readyState !== 'loading') {
+    init();
+  } else {
+    document.addEventListener('DOMContentLoaded', init);
+  }
+})();
+</script>
+{% endblock %}

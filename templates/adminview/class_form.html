@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title|default:'Class' }} - Attendance System{% endblock %}
+
+{% block content %}
+<h3 class="mb-3"><i class="fas fa-book me-2"></i>{{ title|default:'Class' }}</h3>
+<div class="card">
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="mb-3">{{ form.name.label_tag }} {{ form.name }}</div>
+      <div class="mb-3">{{ form.staff.label_tag }} {{ form.staff }}</div>
+      <div class="mb-3">{{ form.geolocation.label_tag }} {{ form.geolocation }}</div>
+      
+      <!-- Location Preview Map -->
+      {% if google_maps_api_key %}
+      <div class="mb-3">
+        <label class="form-label">
+          <i class="fas fa-map me-1"></i>Location Preview
+        </label>
+        <div id="classLocationMap" style="height: 300px; border-radius: 8px; border: 1px solid #dee2e6;"></div>
+        <small class="text-muted">Preview of the selected geo-fence location. Create geo-fences first if none are available.</small>
+      </div>
+      {% endif %}
+      
+      <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save</button>
+      <a href="{% url 'adminview:class_list' %}" class="btn btn-secondary">Cancel</a>
+      {% if google_maps_api_key %}
+      <a href="{% url 'adminview:geofence_create' %}" class="btn btn-outline-info">
+        <i class="fas fa-plus me-1"></i>Create New Geo-fence
+      </a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if google_maps_api_key %}
+<script>
+  // Provide all geofence coordinates keyed by id for the dropdown to preview on map
+  window.geofenceData = {{ geofence_data_json|default:'{}'|safe }};
+  // Enhance options with data-coordinates attribute for direct access if needed
+  document.addEventListener('DOMContentLoaded', function(){
+    try {
+      var select = document.getElementById('id_geolocation');
+      if (select && window.geofenceData) {
+        Array.from(select.options).forEach(function(opt){
+          var key = String(opt.value || '');
+          if (key && window.geofenceData[key] && !opt.getAttribute('data-coordinates')) {
+            var coords = window.geofenceData[key].coordinates || [];
+            if (typeof coords === 'string') {
+              try { coords = JSON.parse(coords); } catch(e) { coords = []; }
+            }
+            opt.setAttribute('data-coordinates', JSON.stringify(coords));
+          }
+        });
+      }
+    } catch(e) { console.warn('Could not bind geofence option data:', e); }
+  });
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}"></script>
+<script>
+(function(){
+  const geolocationSelect = document.getElementById('id_geolocation');
+  const mapElement = document.getElementById('classLocationMap');
+  let map = null, currentPolygon = null;
+  
+  function init(){
+    if (!mapElement) return;
+    
+    // Initialize map
+    map = new google.maps.Map(mapElement, { 
+      center: {lat: 0, lng: 0}, 
+      zoom: 2,
+      mapTypeControl: true,
+      streetViewControl: true,
+      fullscreenControl: true
+    });
+    
+    // Listen for geo-fence selection changes
+    geolocationSelect.addEventListener('change', updateMap);
+    
+    // Initial map update
+    updateMap();
+  }
+  
+  function updateMap(){
+    if (!map || !geolocationSelect.value) {
+      if (currentPolygon) {
+        currentPolygon.setMap(null);
+        currentPolygon = null;
+      }
+      return;
+    }
+    
+    // Get selected geo-fence coordinates from the form
+    const selectedOption = geolocationSelect.options[geolocationSelect.selectedIndex];
+    const coordinatesData = selectedOption.getAttribute('data-coordinates');
+    
+    if (!coordinatesData) {
+      // Try to get coordinates from the selected geo-fence object if available
+      const selectedGeofence = geolocationSelect.value;
+      if (selectedGeofence && window.geofenceData && window.geofenceData[selectedGeofence]) {
+        let coords = window.geofenceData[selectedGeofence].coordinates || [];
+        if (typeof coords === 'string') {
+          try { coords = JSON.parse(coords); } catch(e) { coords = []; }
+        }
+        displayGeofence({ coordinates: coords });
+      }
+      return;
+    }
+    
+    try {
+      const coordinates = JSON.parse(coordinatesData);
+      displayGeofence({ coordinates: coordinates });
+    } catch (e) {
+      console.error('Error parsing coordinates:', e);
+    }
+  }
+  
+  function displayGeofence(geofenceData){
+    if (!geofenceData.coordinates || !geofenceData.coordinates.length) return;
+    
+    // Clear previous polygon
+    if (currentPolygon) {
+      currentPolygon.setMap(null);
+    }
+    
+    // Create new polygon
+    const path = geofenceData.coordinates.map(c => ({lat: c.lat, lng: c.lng}));
+    currentPolygon = new google.maps.Polygon({
+      paths: path,
+      strokeColor: '#0d6efd',
+      fillColor: '#0d6efd',
+      fillOpacity: 0.15,
+      strokeOpacity: 0.8,
+      strokeWeight: 2
+    });
+    currentPolygon.setMap(map);
+    
+    // Fit map to polygon bounds
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach(p => bounds.extend(new google.maps.LatLng(p.lat, p.lng)));
+    map.fitBounds(bounds);
+    
+    // Add center marker
+    const center = bounds.getCenter();
+    new google.maps.Marker({
+      position: center,
+      map: map,
+      title: 'Class Location Center',
+      icon: {
+        url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
+      }
+    });
+  }
+  
+  if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+{% endif %}
+{% endblock %}

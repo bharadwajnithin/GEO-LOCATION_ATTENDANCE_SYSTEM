@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+
+{% block title %}Attendance Analytics - Attendance System{% endblock %}
+
+{% block content %}
+<h3 class="mb-3"><i class="fas fa-chart-bar me-2"></i>Attendance Analytics</h3>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form id="analytics-filter-form" method="get" class="row g-3">
+      <div class="col-md-3">{{ form.class_instance.label_tag }} {{ form.class_instance }}</div>
+      <div class="col-md-3">{{ form.student.label_tag }} {{ form.student }}</div>
+      <div class="col-md-2">{{ form.start_date.label_tag }} {{ form.start_date }}</div>
+      <div class="col-md-2">{{ form.end_date.label_tag }} {{ form.end_date }}</div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button id="analytics-filter-btn" class="btn btn-primary w-100" type="submit">
+          <span id="analytics-filter-spinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
+          <i class="fas fa-filter me-1"></i>Filter
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row mb-3">
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="text-muted">Total Records</h6>
+        <div class="h4 mb-0">{{ total_records }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="text-muted">Present Records</h6>
+        <div class="h4 mb-0 text-success">{{ present_records }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="text-muted">Attendance %</h6>
+        <div class="h4 mb-0">{{ attendance_percentage }}%</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if date_range %}
+<div class="alert alert-light py-2 mb-3 border">
+  <small class="text-muted">Date range:
+    <strong>{{ date_range.start|date:'Y-m-d' }}</strong>
+    to
+    <strong>{{ date_range.end|date:'Y-m-d' }}</strong>
+  </small>
+  {% if student_breakdown %}
+  <small class="text-muted ms-3">Per-student breakdown shown for selected class.</small>
+  {% endif %}
+  <small class="text-muted d-block">Note: Unmarked students are counted as absent for each day in range.</small>
+  </div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-header"><strong>Class-wise Breakdown</strong></div>
+  <div class="card-body">
+    {% if class_breakdown %}
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th>Present</th>
+            <th>Absent</th>
+            <th>Expected</th>
+            <th>%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for name, data in class_breakdown.items %}
+          <tr>
+            <td>{{ name }}</td>
+            <td>{{ data.present }}</td>
+            <td>{{ data.absent }}</td>
+            <td>{{ data.expected }}</td>
+            <td>{{ data.percentage }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-muted">No data available for current filters.</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if student_breakdown %}
+<div class="card mb-3">
+  <div class="card-header"><strong>Per-Student Breakdown (Selected Class)</strong></div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Student</th>
+            <th>Present Days</th>
+            <th>Absent Days</th>
+            <th>Total Days</th>
+            <th>%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in student_breakdown %}
+          <tr>
+            <td>{{ row.student.get_full_name|default:row.student.username }}</td>
+            <td class="text-success">{{ row.present_days }}</td>
+            <td class="text-danger">{{ row.absent_days }}</td>
+            <td>{{ row.total_days }}</td>
+            <td>{{ row.percentage }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header"><strong>Records</strong></div>
+  <div class="card-body">
+    {% if attendance_records %}
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Student</th>
+            <th>Class</th>
+            <th>Present</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in attendance_records %}
+          <tr>
+            <td>{{ r.timestamp|date:'Y-m-d H:i' }}</td>
+            <td>{{ r.student.get_full_name|default:r.student.username }}</td>
+            <td>{{ r.class_instance.name }}</td>
+            <td>
+              {% if r.is_present %}
+                <span class="badge bg-success">Yes</span>
+              {% else %}
+                <span class="badge bg-danger">No</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-muted">No attendance records to display.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+// Debounce filter changes and show a loading indicator while submitting
+(function(){
+  const form = document.getElementById('analytics-filter-form');
+  const btn = document.getElementById('analytics-filter-btn');
+  const spinner = document.getElementById('analytics-filter-spinner');
+  if (!form) return;
+
+  let timer = null;
+  const debounceMs = 500;
+
+  function setLoading(on){
+    if (btn) btn.disabled = on;
+    if (spinner) spinner.classList.toggle('d-none', !on);
+    // Disable other inputs to prevent further rapid changes
+    Array.from(form.elements).forEach(el => {
+      if (el !== btn) el.disabled = on;
+    });
+  }
+
+  function scheduleSubmit(){
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(()=>{
+      if (document.body.contains(form)){
+        setLoading(true);
+        form.submit();
+      }
+    }, debounceMs);
+  }
+
+  // On manual submit (button press), also show loading immediately
+  form.addEventListener('submit', function(){ setLoading(true); });
+
+  // Attach to relevant fields
+  const inputs = form.querySelectorAll('select, input[type="date"], input[type="text"]');
+  inputs.forEach(el => {
+    el.addEventListener('change', scheduleSubmit);
+    if (el.tagName === 'INPUT') el.addEventListener('input', scheduleSubmit);
+  });
+})();
+</script>
+{% endblock %}

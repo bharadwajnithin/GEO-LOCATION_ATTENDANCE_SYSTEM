@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block title %}Geo-fences - Attendance System{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3 class="mb-0"><i class="fas fa-map me-2"></i>Geo-fences</h3>
+  <a href="{% url 'adminview:geofence_create' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i>New Geo-fence</a>
+</div>
+
+{% if geofences %}
+<div class="card">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Points</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in geofences %}
+          <tr>
+            <td>{{ g.name }}</td>
+            <td>{{ g.coordinates|length }}</td>
+            <td class="text-end">
+              <a href="{% url 'adminview:geofence_edit' g.id %}" class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></a>
+              <a href="{% url 'adminview:geofence_delete' g.id %}" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info"><i class="fas fa-info-circle me-1"></i>No geo-fences found.</div>
+{% endif %}
+{% endblock %}

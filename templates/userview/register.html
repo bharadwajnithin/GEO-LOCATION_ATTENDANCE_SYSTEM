@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+
+{% block title %}Register - Attendance System{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white text-center">
+                <h4 class="mb-0">
+                    <i class="fas fa-user-plus me-2"></i>User Registration
+                </h4>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" enctype="multipart/form-data" id="registrationForm">
+                    {% csrf_token %}
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.username.id_for_label }}" class="form-label">
+                                    <i class="fas fa-user me-1"></i>User ID *
+                                </label>
+                                {{ form.username }}
+                                {% if form.username.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.username.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="{{ form.role.id_for_label }}" class="form-label">
+                                    <i class="fas fa-user-tag me-1"></i>User Role *
+                                </label>
+                                {{ form.role }}
+                                {% if form.role.errors %}
+                                    <div class="text-danger small">
+                                        {% for error in form.role.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="id_display_name" class="form-label">
+                            <i class="fas fa-id-badge me-1"></i>User Name *
+                        </label>
+                        {{ form.display_name }}
+                        {% if form.display_name.errors %}
+                            <div class="text-danger small">
+                                {% for error in form.display_name.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="id_password" class="form-label">
+                            <i class="fas fa-lock me-1"></i>Password *
+                        </label>
+                        {{ form.password }}
+                        {% if form.password.errors %}
+                            <div class="text-danger small">
+                                {% for error in form.password.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {% for error in form.non_field_errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    <!-- Face Capture (Multiple Images) -->
+                    <div class="mb-4" id="faceCaptureSection" style="display:none;">
+                        <label class="form-label">
+                            <i class="fas fa-camera me-1"></i>Face Capture (at least 5 images)
+                        </label>
+                        <div class="p-3 border rounded bg-light">
+                            <video id="regVideo" width="100%" height="300" autoplay muted playsinline style="border-radius: 8px; background:#f8f9fa;"></video>
+                            <canvas id="regCanvas" width="400" height="300" class="d-none"></canvas>
+                            <div class="mt-2 d-flex gap-2">
+                                <button type="button" id="btnStartCam" class="btn btn-primary">
+                                    <i class="fas fa-camera me-1"></i>Start Camera
+                                </button>
+                                <button type="button" id="btnCapture" class="btn btn-success" disabled>
+                                    <i class="fas fa-plus-square me-1"></i>Capture Image
+                                </button>
+                                <span class="ms-2 align-self-center small text-muted">
+                                    Captured: <span id="capCount">0</span>/5
+                                </span>
+                            </div>
+                            <div id="thumbs" class="mt-3 d-flex flex-wrap gap-2"></div>
+                        </div>
+                        <!-- Hidden inputs container for face_images[] -->
+                        <div id="facesContainer"></div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-user-plus me-2"></i>Register
+                        </button>
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                
+                <div class="text-center">
+                    <p class="mb-0">Already have an account?</p>
+                    <a href="{% url 'userview:login' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-sign-in-alt me-2"></i>Login Now
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const roleField = document.getElementById('{{ form.role.id_for_label }}') || document.getElementById('id_role');
+  const faceSection = document.getElementById('faceCaptureSection');
+  const form = document.getElementById('registrationForm');
+  const video = document.getElementById('regVideo');
+  const canvas = document.getElementById('regCanvas');
+  const btnStart = document.getElementById('btnStartCam');
+  const btnCapture = document.getElementById('btnCapture');
+  const capCount = document.getElementById('capCount');
+  const thumbs = document.getElementById('thumbs');
+  const facesContainer = document.getElementById('facesContainer');
+  let stream = null;
+  let captured = 0;
+
+  // Reveal input fields and face section after role selected
+  function updateVisibility() {
+    const show = !!(roleField && roleField.value);
+    document.querySelectorAll('[for="{{ form.username.id_for_label }}"], #{{ form.username.id_for_label }}, [for="id_display_name"], #id_display_name, [for="id_password"], #id_password').forEach(el => {
+      if (el) el.closest('.mb-3')?.classList.toggle('d-none', !show);
+    });
+    if (faceSection) faceSection.style.display = show ? 'block' : 'none';
+  }
+  updateVisibility();
+  if (roleField) roleField.addEventListener('change', updateVisibility);
+
+  if (btnStart) {
+    btnStart.addEventListener('click', async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        btnCapture.disabled = false;
+      } catch (e) {
+        alert('Unable to access camera. You can still register but face data will be skipped.');
+      }
+    });
+  }
+
+  if (btnCapture) {
+    btnCapture.addEventListener('click', () => {
+      if (!video || video.readyState < 2) return;
+      const ctx = canvas.getContext('2d');
+      canvas.width = 400;
+      canvas.height = 300;
+      ctx.drawImage(video, 0, 0, 400, 300);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      if (!dataUrl || dataUrl.length < 50) return;
+      // add hidden input
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'face_images[]';
+      input.value = dataUrl;
+      facesContainer.appendChild(input);
+      // add thumbnail
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.width = 80; img.height = 60; img.className = 'rounded border';
+      thumbs.appendChild(img);
+      captured += 1;
+      capCount.textContent = String(captured);
+    });
+  }
+
+  form.addEventListener('submit', (e) => {
+    // Require at least 5 images if camera accessible
+    const have = facesContainer.querySelectorAll('input[name="face_images[]"]').length;
+    if (have < 5) {
+      if (!confirm('Less than 5 face images captured. Continue without full face data?')) {
+        e.preventDefault();
+      }
+    }
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    }
+  });
+});
+</script>
+{% endblock %}
+

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Staff List - Attendance System{% endblock %}
+{% block content %}
+<h3 class="mb-3"><i class="fas fa-user-tie me-2"></i>Staff</h3>
+<div class="card">
+  <div class="card-body">
+    {% if staffs %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Department</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in staffs %}
+          <tr>
+            <td>@{{ s.username }}</td>
+            <td>{{ s.get_full_name|default:s.username }}</td>
+            <td>{{ s.email|default:'-' }}</td>
+            <td>{{ s.department_id|default:'-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-muted">No staff found.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

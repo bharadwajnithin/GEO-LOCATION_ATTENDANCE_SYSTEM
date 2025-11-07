@@ -1,0 +1,11 @@
+{
+  "timestamp": "2025-11-07T20:59:20.159811",
+  "overall_success_rate": 0.625,
+  "total_tests": 8,
+  "passed_tests": 5,
+  "security_status": {
+    "negative_tests_passed": false,
+    "liveness_tests_passed": false,
+    "impostor_tests_passed": false
+  }
+}

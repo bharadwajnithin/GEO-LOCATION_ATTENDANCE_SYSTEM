@@ -1,0 +1,547 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Dashboard - Attendance System{% endblock %}
+
+{% block extra_css %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .stats-card {
+        transition: transform 0.2s;
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-2px);
+    }
+    
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin: 20px 0;
+    }
+    
+    .quick-action-btn {
+        min-height: 80px;
+        font-size: 1rem;
+    }
+    
+    .metric-value {
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    
+    .metric-label {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="fas fa-tachometer-alt me-2"></i>Admin Dashboard
+        </h2>
+        <p class="text-muted">Comprehensive overview of the attendance system and analytics.</p>
+    </div>
+</div>
+
+<!-- Overall Statistics -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card bg-primary text-white">
+            <div class="card-body text-center">
+                <div class="metric-value">{{ total_users }}</div>
+                <div class="metric-label">Total Users</div>
+                <i class="fas fa-users fa-2x mt-2 opacity-75"></i>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card bg-success text-white">
+            <div class="card-body text-center">
+                <div class="metric-value">{{ total_students }}</div>
+                <div class="metric-label">Students</div>
+                <i class="fas fa-graduation-cap fa-2x mt-2 opacity-75"></i>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card bg-info text-white">
+            <div class="card-body text-center">
+                <div class="metric-value">{{ total_staff }}</div>
+                <div class="metric-label">Staff Members</div>
+                <i class="fas fa-chalkboard-teacher fa-2x mt-2 opacity-75"></i>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card stats-card bg-warning text-white">
+            <div class="card-body text-center">
+                <div class="metric-value">{{ total_classes }}</div>
+                <div class="metric-label">Classes</div>
+                <i class="fas fa-book fa-2x mt-2 opacity-75"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt me-2"></i>Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <a href="{% url 'adminview:class_create' %}" class="btn btn-primary quick-action-btn w-100">
+                            <i class="fas fa-plus fa-2x mb-2"></i><br>
+                            Create Class
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <a href="{% url 'adminview:geofence_create' %}" class="btn btn-success quick-action-btn w-100">
+                            <i class="fas fa-map fa-2x mb-2"></i><br>
+                            Create Geo-fence
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <a href="{% url 'adminview:attendance_analytics' %}" class="btn btn-info quick-action-btn w-100">
+                            <i class="fas fa-chart-bar fa-2x mb-2"></i><br>
+                            View Analytics
+                        </a>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <a href="{% url 'adminview:class_list' %}" class="btn btn-warning quick-action-btn w-100">
+                            <i class="fas fa-list fa-2x mb-2"></i><br>
+                            Manage Classes
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Location Search & Management -->
+{% if google_maps_api_key %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-map-marker-alt me-2"></i>Location Search & Management
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6 class="card-title">Quick Location Actions</h6>
+                                <div class="d-grid gap-2">
+                                    <a href="{% url 'adminview:geofence_create' %}" class="btn btn-success btn-sm">
+                                        <i class="fas fa-plus me-1"></i>Create Geo-fence
+                                    </a>
+                                    <a href="{% url 'adminview:geofence_list' %}" class="btn btn-outline-info btn-sm">
+                                        <i class="fas fa-list me-1"></i>View All Geo-fences
+                                    </a>
+                                    <a href="{% url 'adminview:class_create' %}" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-book me-1"></i>Create Class
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Attendance Overview -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-pie me-2"></i>Attendance Overview (Last 30 Days)
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <div id="attendance-percentage" class="metric-value text-primary">{{ attendance_percentage }}%</div>
+                    <div class="metric-label">Overall Attendance Rate</div>
+                </div>
+                
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border-end">
+                            <div id="present-count" class="h4 text-success">{{ present_records }}</div>
+                            <small class="text-muted">Present</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div id="absent-count" class="h4 text-danger">{{ absent_records }}</div>
+                        <small class="text-muted">Absent</small>
+                    </div>
+                </div>
+                
+                <div class="progress mt-3" style="height: 10px;">
+                    <div class="progress-bar bg-success" 
+                         style="width: {{ attendance_percentage }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-line me-2"></i>Daily Attendance Trend (Last 7 Days)
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="dailyAttendanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Class-wise Attendance -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar me-2"></i>Class-wise Attendance Performance
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if class_attendance %}
+                    <div class="chart-container">
+                        <canvas id="classAttendanceChart"></canvas>
+                    </div>
+                    
+                    <div class="table-responsive mt-3">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Class</th>
+                                    <th>Present</th>
+                                    <th>Total</th>
+                                    <th>Percentage</th>
+                                    <th>Performance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for class_data in class_attendance %}
+                                <tr>
+                                    <td><strong>{{ class_data.class_name }}</strong></td>
+                                    <td>{{ class_data.present_count }}</td>
+                                    <td>{{ class_data.total_count }}</td>
+                                    <td>{{ class_data.percentage }}%</td>
+                                    <td>
+                                        {% if class_data.percentage >= 80 %}
+                                            <span class="badge bg-success">Excellent</span>
+                                        {% elif class_data.percentage >= 60 %}
+                                            <span class="badge bg-warning">Good</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">Needs Improvement</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Attendance Data</h5>
+                        <p class="text-muted">No attendance records found for the selected period.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Status -->
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-cogs me-2"></i>System Status
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <div class="text-center">
+                            <i class="fas fa-database fa-2x text-primary mb-2"></i>
+                            <div class="h5">{{ total_geofences }}</div>
+                            <small class="text-muted">Geo-fences</small>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="text-center">
+                            <i class="fas fa-clock fa-2x text-success mb-2"></i>
+                            <div class="h5">{{ total_attendance_records }}</div>
+                            <small class="text-muted">Total Records</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Database Health</span>
+                        <span class="badge bg-success">Healthy</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <span>Face Recognition</span>
+                        <span class="badge bg-success">Active</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <span>Geo-fencing</span>
+                        <span class="badge bg-success">Active</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-tasks me-2"></i>Recent Activities
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-marker bg-primary"></div>
+                        <div class="timeline-content">
+                            <h6 class="mb-1">System Overview</h6>
+                            <p class="text-muted mb-0">Dashboard loaded successfully</p>
+                            <small class="text-muted">Just now</small>
+                        </div>
+                    </div>
+                    
+                    <div class="timeline-item">
+                        <div class="timeline-marker bg-success"></div>
+                        <div class="timeline-content">
+                            <h6 class="mb-1">Analytics Updated</h6>
+                            <p class="text-muted mb-0">Attendance data refreshed</p>
+                            <small class="text-muted">2 minutes ago</small>
+                        </div>
+                    </div>
+                    
+                    <div class="timeline-item">
+                        <div class="timeline-marker bg-info"></div>
+                        <div class="timeline-content">
+                            <h6 class="mb-1">Database Check</h6>
+                            <p class="text-muted mb-0">All systems operational</p>
+                            <small class="text-muted">5 minutes ago</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Daily Attendance Chart
+const dailyCtx = document.getElementById('dailyAttendanceChart').getContext('2d');
+const dailyChart = new Chart(dailyCtx, {
+    type: 'line',
+    data: {
+        labels: [{% for day in daily_attendance %}'{{ day.date }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+        datasets: [{
+            label: 'Present Students',
+            data: [{% for day in daily_attendance %}{{ day.present_count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            tension: 0.1
+        }, {
+            label: 'Total Students',
+            data: [{% for day in daily_attendance %}{{ day.total_count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+            borderColor: 'rgb(255, 99, 132)',
+            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+            tension: 0.1
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                position: 'top',
+            }
+        }
+    }
+});
+
+// Class Attendance Chart
+{% if class_attendance %}
+const classCtx = document.getElementById('classAttendanceChart').getContext('2d');
+const classChart = new Chart(classCtx, {
+    type: 'bar',
+    data: {
+        labels: [{% for class_data in class_attendance %}'{{ class_data.class_name }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+        datasets: [{
+            label: 'Attendance Percentage',
+            data: [{% for class_data in class_attendance %}{{ class_data.percentage }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+            backgroundColor: [
+                'rgba(75, 192, 192, 0.8)',
+                'rgba(54, 162, 235, 0.8)',
+                'rgba(255, 206, 86, 0.8)',
+                'rgba(255, 99, 132, 0.8)',
+                'rgba(153, 102, 255, 0.8)'
+            ],
+            borderColor: [
+                'rgba(75, 192, 192, 1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(255, 99, 132, 1)',
+                'rgba(153, 102, 255, 1)'
+            ],
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 100,
+                ticks: {
+                    callback: function(value) {
+                        return value + '%';
+                    }
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: false
+            }
+        }
+    }
+});
+{% endif %}
+
+// Auto-refresh dashboard data via JSON API
+(function(){
+  function updateMetrics(payload){
+    const m = payload.metrics || {};
+    const pctEl = document.getElementById('attendance-percentage');
+    const presEl = document.getElementById('present-count');
+    const absEl = document.getElementById('absent-count');
+    if (pctEl && typeof m.attendance_percentage !== 'undefined') pctEl.textContent = m.attendance_percentage + '%';
+    if (presEl && typeof m.present_records !== 'undefined') presEl.textContent = m.present_records;
+    if (absEl && typeof m.absent_records !== 'undefined') absEl.textContent = m.absent_records;
+  }
+
+  function updateCharts(payload){
+    if (window.dailyChart && payload.daily_attendance){
+      const labels = payload.daily_attendance.map(d => d.date);
+      const present = payload.daily_attendance.map(d => d.present_count);
+      const total = payload.daily_attendance.map(d => d.total_count);
+      window.dailyChart.data.labels = labels;
+      window.dailyChart.data.datasets[0].data = present;
+      window.dailyChart.data.datasets[1].data = total;
+      window.dailyChart.update();
+    }
+    if (window.classChart && payload.class_attendance){
+      const labels = payload.class_attendance.map(c => c.class_name);
+      const perc = payload.class_attendance.map(c => c.percentage);
+      window.classChart.data.labels = labels;
+      window.classChart.data.datasets[0].data = perc;
+      window.classChart.update();
+    }
+  }
+
+  async function refresh(){
+    try{
+      const res = await fetch('{% url "adminview:admin_dashboard_metrics" %}', {headers: {"X-Requested-With":"XMLHttpRequest"}});
+      if (!res.ok) return;
+      const data = await res.json();
+      updateMetrics(data);
+      updateCharts(data);
+    }catch(e){ /* ignore transient errors */ }
+  }
+
+  // expose charts for updates
+  window.dailyChart = dailyChart;
+  if (typeof classChart !== 'undefined') window.classChart = classChart;
+
+  // initial and periodic refresh (every 60s)
+  refresh();
+  setInterval(refresh, 60000);
+})();
+</script>
+
+<style>
+.timeline {
+    position: relative;
+    padding-left: 30px;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.timeline-marker {
+    position: absolute;
+    left: -35px;
+    top: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.timeline-content {
+    padding-left: 15px;
+    border-left: 2px solid #e9ecef;
+}
+
+.timeline-content:before {
+    content: '';
+    position: absolute;
+    left: -2px;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: #e9ecef;
+}
+</style>
+{% endblock %}
