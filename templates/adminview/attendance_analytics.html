@@ -7,43 +7,98 @@
 
 <div class="card mb-3">
   <div class="card-body">
-    <form id="analytics-filter-form" method="get" class="row g-3">
-      <div class="col-md-3">{{ form.class_instance.label_tag }} {{ form.class_instance }}</div>
-      <div class="col-md-3">{{ form.student.label_tag }} {{ form.student }}</div>
-      <div class="col-md-2">{{ form.start_date.label_tag }} {{ form.start_date }}</div>
-      <div class="col-md-2">{{ form.end_date.label_tag }} {{ form.end_date }}</div>
-      <div class="col-md-2 d-flex align-items-end">
-        <button id="analytics-filter-btn" class="btn btn-primary w-100" type="submit">
+    <form id="analytics-filter-form" method="get" class="row g-3" role="search" aria-label="Analytics filters">
+      <div class="col-lg-3 col-12">{{ form.class_instance.label_tag }} {{ form.class_instance }}</div>
+      <div class="col-lg-3 col-12">{{ form.student.label_tag }} {{ form.student }}</div>
+      <div class="col-6 col-lg-2">{{ form.start_date.label_tag }} {{ form.start_date }}</div>
+      <div class="col-6 col-lg-2">{{ form.end_date.label_tag }} {{ form.end_date }}</div>
+      <div class="col-lg-2 col-12 d-flex align-items-end gap-2">
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="granularity" id="granDaily" value="daily" checked>
+          <label class="form-check-label" for="granDaily">Daily</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="granularity" id="granWeekly" value="weekly">
+          <label class="form-check-label" for="granWeekly">Weekly</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="granularity" id="granMonthly" value="monthly">
+          <label class="form-check-label" for="granMonthly">Monthly</label>
+        </div>
+      </div>
+      <div class="col-12 d-flex align-items-end justify-content-between gap-2">
+        <div class="btn-group" role="group" aria-label="Quick range">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="quick-daily"><i class="far fa-calendar-day me-1"></i>Today</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="quick-weekly"><i class="far fa-calendar-week me-1"></i>This Week</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="quick-monthly"><i class="far fa-calendar-alt me-1"></i>This Month</button>
+        </div>
+        <button id="analytics-filter-btn" class="btn btn-primary" type="submit">
           <span id="analytics-filter-spinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
-          <i class="fas fa-filter me-1"></i>Filter
+          <i class="fas fa-filter me-1"></i>Apply Filters
         </button>
+      </div>
+      <div class="col-12">
+        <small id="date-error" class="text-danger d-none" role="alert">Start date must be on or before End date.</small>
       </div>
     </form>
   </div>
 </div>
 
+{% if has_selected_class %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Trend (Daily Present)</strong>
+  </div>
+  <div class="card-body">
+    <canvas id="attendanceTrend"></canvas>
+  </div>
+  </div>
+{% endif %}
+
 <div class="row mb-3">
-  <div class="col-md-4">
+  <div class="col-md-3">
     <div class="card text-center">
       <div class="card-body">
-        <h6 class="text-muted">Total Records</h6>
-        <div class="h4 mb-0">{{ total_records }}</div>
+        <h6 class="text-muted">Total Students</h6>
+        <div class="h4 mb-0" id="card-enrolled">{{ enrolled_students }}</div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
+  <div class="col-md-3">
     <div class="card text-center">
       <div class="card-body">
-        <h6 class="text-muted">Present Records</h6>
-        <div class="h4 mb-0 text-success">{{ present_records }}</div>
+        <h6 class="text-muted">Present</h6>
+        <div class="h4 mb-0 text-success" id="card-present">{{ present_count }}</div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
+  <div class="col-md-3">
+    <div class="card text-center">
+      <div class="card-body">
+        <h6 class="text-muted">Absent</h6>
+        <div class="h4 mb-0 text-danger" id="card-absent">{{ absent_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
     <div class="card text-center">
       <div class="card-body">
         <h6 class="text-muted">Attendance %</h6>
-        <div class="h4 mb-0">{{ attendance_percentage }}%</div>
+        <div class="h4 mb-0" id="card-percentage">{{ cards_percentage }}%</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong>Present vs Absent</strong></div>
+  <div class="card-body">
+    <div class="row align-items-center">
+      <div class="col-md-6">
+        <canvas id="attendancePie" aria-label="Present vs Absent pie" role="img"></canvas>
+      </div>
+      <div class="col-md-6">
+        <canvas id="attendanceBar" aria-label="Present vs Absent bars" role="img"></canvas>
       </div>
     </div>
   </div>
@@ -64,11 +119,16 @@
 {% endif %}
 
 <div class="card mb-3">
-  <div class="card-header"><strong>Class-wise Breakdown</strong></div>
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Class-wise Breakdown</strong>
+    <button id="export-class-csv" class="btn btn-sm btn-outline-secondary" type="button">
+      <i class="fas fa-file-csv me-1"></i>Export CSV
+    </button>
+  </div>
   <div class="card-body">
-    {% if class_breakdown %}
+    {% if class_breakdown_rows %}
     <div class="table-responsive">
-      <table class="table table-sm">
+      <table class="table table-sm table-hover align-middle" id="class-breakdown-table">
         <thead>
           <tr>
             <th>Class</th>
@@ -79,27 +139,35 @@
           </tr>
         </thead>
         <tbody>
-          {% for name, data in class_breakdown.items %}
-          <tr>
-            <td>{{ name }}</td>
-            <td>{{ data.present }}</td>
-            <td>{{ data.absent }}</td>
-            <td>{{ data.expected }}</td>
-            <td>{{ data.percentage }}%</td>
+          {% for row in class_breakdown_rows %}
+          <tr data-class-id="{{ row.id }}" class="select-class-row" style="cursor:pointer;">
+            <td>
+              <button type="button" class="btn btn-link p-0 select-class-btn" data-class-id="{{ row.id }}">{{ row.name }}</button>
+            </td>
+            <td>{{ row.present }}</td>
+            <td>{{ row.absent }}</td>
+            <td>{{ row.expected }}</td>
+            <td>{{ row.percentage }}%</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    <small class="text-muted">Tip: Click a class name or row to view its charts above.</small>
     {% else %}
     <div class="text-muted">No data available for current filters.</div>
     {% endif %}
   </div>
-</div>
+  </div>
 
 {% if student_breakdown %}
 <div class="card mb-3">
-  <div class="card-header"><strong>Per-Student Breakdown (Selected Class)</strong></div>
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Per-Student Breakdown (Selected Class)</strong>
+    <button id="export-student-csv" class="btn btn-sm btn-outline-secondary" type="button">
+      <i class="fas fa-file-csv me-1"></i>Export CSV
+    </button>
+  </div>
   <div class="card-body">
     <div class="table-responsive">
       <table class="table table-sm">
@@ -126,7 +194,7 @@
       </table>
     </div>
   </div>
-</div>
+  </div>
 {% endif %}
 
 <div class="card">
@@ -166,49 +234,343 @@
     {% endif %}
   </div>
 </div>
+<!-- Drilldown Modal -->
+<div class="modal fade" id="drilldownModal" tabindex="-1" aria-labelledby="drilldownLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="drilldownLabel">Attendance Records</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div id="drilldown-meta" class="small text-muted"></div>
+          <div class="input-group input-group-sm" style="max-width:260px;">
+            <span class="input-group-text"><i class="fas fa-search"></i></span>
+            <input type="text" id="drilldown-search" class="form-control" placeholder="Search student..." aria-label="Search student" />
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle" id="drilldown-table" aria-label="Drilldown attendance table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Student</th>
+                <th>Class</th>
+                <th>Present</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="btn-group me-auto">
+          <button class="btn btn-outline-secondary btn-sm" id="drill-prev">Prev</button>
+          <button class="btn btn-outline-secondary btn-sm" id="drill-next">Next</button>
+        </div>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+  </div>
 {% endblock %}
 
 {% block extra_js %}
 {{ block.super }}
+{% if analytics_data %}
+{{ analytics_data|json_script:"analytics-data" }}
+{% endif %}
+{% if trend_data %}
+{{ trend_data|json_script:"trend-data" }}
+{% endif %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// Debounce filter changes and show a loading indicator while submitting
+// Helpers for filters and URLs
 (function(){
   const form = document.getElementById('analytics-filter-form');
   const btn = document.getElementById('analytics-filter-btn');
   const spinner = document.getElementById('analytics-filter-spinner');
-  if (!form) return;
-
-  let timer = null;
-  const debounceMs = 500;
+  const apiBase = '{% url "adminview:attendance_analytics_api" %}';
+  const drillApi = '{% url "adminview:attendance_analytics_drilldown" %}';
+  const startInput = document.querySelector('input[name="start_date"]');
+  const endInput = document.querySelector('input[name="end_date"]');
+  const dateError = document.getElementById('date-error');
 
   function setLoading(on){
     if (btn) btn.disabled = on;
     if (spinner) spinner.classList.toggle('d-none', !on);
-    // Disable other inputs to prevent further rapid changes
-    Array.from(form.elements).forEach(el => {
-      if (el !== btn) el.disabled = on;
+  }
+
+  function validateDates(){
+    const s = startInput?.value;
+    const e = endInput?.value;
+    let ok = true;
+    if (s && e && s > e){
+      ok = false;
+    }
+    // UI feedback
+    [startInput, endInput].forEach(el=>{
+      if (!el) return;
+      el.classList.toggle('is-invalid', !ok);
+      el.setAttribute('aria-invalid', String(!ok));
     });
+    if (dateError) dateError.classList.toggle('d-none', ok);
+    // disable submit if invalid
+    if (btn) btn.disabled = !ok;
+    return ok;
   }
 
-  function scheduleSubmit(){
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(()=>{
-      if (document.body.contains(form)){
-        setLoading(true);
-        form.submit();
-      }
-    }, debounceMs);
+  function getFilters(){
+    const fd = new FormData(form);
+    const qs = new URLSearchParams();
+    const cls = fd.get('class_instance');
+    const stu = fd.get('student');
+    const sd = fd.get('start_date');
+    const ed = fd.get('end_date');
+    const gran = fd.get('granularity') || 'daily';
+    if (cls) qs.set('class_id', cls);
+    if (stu) qs.set('student_id', stu);
+    if (sd) qs.set('start_date', sd);
+    if (ed) qs.set('end_date', ed);
+    if (gran) qs.set('granularity', gran);
+    return qs;
   }
 
-  // On manual submit (button press), also show loading immediately
-  form.addEventListener('submit', function(){ setLoading(true); });
+  function buildApiUrl(params){
+    return apiBase + (params.toString() ? ('?' + params.toString()) : '');
+  }
 
-  // Attach to relevant fields
-  const inputs = form.querySelectorAll('select, input[type="date"], input[type="text"]');
-  inputs.forEach(el => {
-    el.addEventListener('change', scheduleSubmit);
-    if (el.tagName === 'INPUT') el.addEventListener('input', scheduleSubmit);
+  // Charts state
+  let chartPie = window._chartPie;
+  let chartBar = window._chartBar;
+  let chartTrend = window._chartTrend;
+
+  function destroyCharts(){
+    try{ if (chartPie) { chartPie.destroy(); chartPie = null; } } catch(e){}
+    try{ if (chartBar) { chartBar.destroy(); chartBar = null; } } catch(e){}
+    try{ if (chartTrend) { chartTrend.destroy(); chartTrend = null; } } catch(e){}
+  }
+
+  function updateCards(totals){
+    document.getElementById('card-enrolled').textContent = totals.enrolled ?? 0;
+    document.getElementById('card-present').textContent = totals.present ?? 0;
+    document.getElementById('card-absent').textContent = totals.absent ?? 0;
+    document.getElementById('card-percentage').textContent = (totals.percentage ?? 0) + '%';
+  }
+
+  function renderCharts(payload){
+    const pieEl = document.getElementById('attendancePie');
+    const barEl = document.getElementById('attendanceBar');
+    const trendEl = document.getElementById('attendanceTrend');
+    const present = payload.totals?.present ?? 0;
+    const absent = payload.totals?.absent ?? 0;
+    const labels = ['Present','Absent'];
+    const colors = ['#28a745','#dc3545'];
+    destroyCharts();
+    if (pieEl){
+      chartPie = new Chart(pieEl.getContext('2d'), {
+        type: 'pie',
+        data: { labels, datasets: [{ data: [present, absent], backgroundColor: colors }]},
+        options: { responsive: true, plugins: { legend: { position: 'bottom' }}}
+      });
+      // drilldown from pie
+      pieEl.onclick = (evt)=>{
+        const points = chartPie.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+        if (points && points.length){ openDrilldown(); }
+      };
+    }
+    if (barEl){
+      chartBar = new Chart(barEl.getContext('2d'), {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Count', data: [present, absent], backgroundColor: colors }]},
+        options: { responsive: true, plugins: { legend: { display: false }}, scales: { y: { beginAtZero: true }}}
+      });
+      barEl.onclick = ()=> openDrilldown();
+    }
+    if (trendEl){
+      const t = Array.isArray(payload.trend) ? payload.trend : [];
+      chartTrend = new Chart(trendEl.getContext('2d'), {
+        type: 'line',
+        data: { labels: t.map(x=>x.date), datasets: [{ label: 'Present', data: t.map(x=>x.present), borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.15)', fill: true, tension: .35 }]},
+        options: { responsive: true, plugins: { legend: { position: 'bottom' }}, scales: { y: { beginAtZero: true }}}
+      });
+    }
+  }
+
+  async function fetchAnalytics(){
+    if (!validateDates()) return;
+    setLoading(true);
+    const params = getFilters();
+    try{
+      const res = await fetch(buildApiUrl(params), { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!res.ok){ throw new Error(data?.error || 'Request failed'); }
+      updateCards(data.totals || {});
+      renderCharts(data);
+    } catch(e){
+      // basic error toast
+      alert('Failed to load analytics. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openDrilldown(){
+    const modalEl = document.getElementById('drilldownModal');
+    if (!modalEl) return;
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+    loadDrilldownPage(1);
+  }
+
+  async function loadDrilldownPage(page){
+    const params = getFilters();
+    params.set('page', String(page || 1));
+    const qInput = document.getElementById('drilldown-search');
+    if (qInput && qInput.value) params.set('q', qInput.value.trim());
+    const url = drillApi + '?' + params.toString();
+    const tbody = document.querySelector('#drilldown-table tbody');
+    const meta = document.getElementById('drilldown-meta');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="4">Loading...</td></tr>';
+    try{
+      const res = await fetch(url, { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!res.ok){ throw new Error(data?.error || 'Drilldown failed'); }
+      const rows = (data.results||[]).map(r=>`<tr><td>${r.timestamp}</td><td>${r.student_name}</td><td>${r.class_name}</td><td>${r.is_present?'<span class="badge bg-success">Yes</span>':'<span class="badge bg-danger">No</span>'}</td></tr>`).join('');
+      if (tbody) tbody.innerHTML = rows || '<tr><td colspan="4">No records</td></tr>';
+      if (meta) meta.textContent = `Page ${data.page} • Total ${data.total}`;
+      const prev = document.getElementById('drill-prev');
+      const next = document.getElementById('drill-next');
+      const totalPages = Math.ceil((data.total||0) / (data.page_size||25));
+      if (prev) prev.disabled = (data.page||1) <= 1;
+      if (next) next.disabled = (data.page||1) >= totalPages;
+      prev.onclick = ()=> loadDrilldownPage((data.page||1)-1);
+      next.onclick = ()=> loadDrilldownPage((data.page||1)+1);
+    } catch(e){ if (tbody) tbody.innerHTML = '<tr><td colspan="4">Failed to load</td></tr>'; }
+  }
+
+  // Submit filters triggers AJAX (no full reload)
+  form.addEventListener('submit', function(ev){
+    ev.preventDefault();
+    if (!validateDates()) { startInput?.focus(); return; }
+    fetchAnalytics();
   });
+  form.querySelectorAll('select, input[type="date"], input[type="radio"]').forEach(el=>{
+    el.addEventListener('change', ()=>{ if (el.type === 'date') validateDates(); fetchAnalytics(); });
+  });
+
+  // Quick ranges
+  document.getElementById('quick-daily')?.addEventListener('click', ()=>{
+    const d = new Date(); const s = d.toISOString().slice(0,10);
+    form.querySelector('input[name="start_date"]').value = s;
+    form.querySelector('input[name="end_date"]').value = s;
+    validateDates();
+    fetchAnalytics();
+  });
+  document.getElementById('quick-weekly')?.addEventListener('click', ()=>{
+    const t = new Date();
+    const monday = new Date(t); const dow = t.getDay(); monday.setDate(t.getDate() - ((dow===0)?6:(dow-1)));
+    const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+    form.querySelector('input[name="start_date"]').value = monday.toISOString().slice(0,10);
+    form.querySelector('input[name="end_date"]').value = sunday.toISOString().slice(0,10);
+    validateDates();
+    fetchAnalytics();
+  });
+  document.getElementById('quick-monthly')?.addEventListener('click', ()=>{
+    const t = new Date(); const first = new Date(t.getFullYear(), t.getMonth(), 1); const last = new Date(t.getFullYear(), t.getMonth()+1, 0);
+    form.querySelector('input[name="start_date"]').value = first.toISOString().slice(0,10);
+    form.querySelector('input[name="end_date"]').value = last.toISOString().slice(0,10);
+    validateDates();
+    fetchAnalytics();
+  });
+
+  // Export buttons with current filters
+  document.getElementById('export-class-csv')?.addEventListener('click', ()=>{
+    const p = getFilters(); p.set('export','csv');
+    window.location.href = buildApiUrl(p);
+  });
+  document.getElementById('export-student-csv')?.addEventListener('click', ()=>{
+    const p = getFilters(); p.set('export','csv');
+    window.location.href = drillApi + '?' + p.toString();
+  });
+
+  // Click on class row selects and refreshes analytics
+  document.querySelectorAll('.select-class-btn, .select-class-row').forEach(el=>{
+    el.addEventListener('click', (ev)=>{
+      const cid = ev.currentTarget.getAttribute('data-class-id') || ev.currentTarget.dataset.classId;
+      const sel = form.querySelector('select[name="class_instance"]');
+      if (cid && sel){ sel.value = cid; fetchAnalytics(); }
+    });
+  });
+
+  // Initial fetch to sync dynamic charts/cards with server
+  validateDates();
+  fetchAnalytics();
 })();
+  // Drilldown search debounce
+  (function(){
+    const qInput = document.getElementById('drilldown-search');
+    if (!qInput) return;
+    let t = null;
+    qInput.addEventListener('input', ()=>{
+      if (t) clearTimeout(t);
+      t = setTimeout(()=> loadDrilldownPage(1), 400);
+    });
+  })();
+})();
+
+// Quick date range buttons (Daily/Weekly/Monthly)
+(function(){
+  const form = document.getElementById('analytics-filter-form');
+  if (!form) return;
+  const start = form.querySelector('input[name="start_date"]');
+  const end = form.querySelector('input[name="end_date"]');
+  const daily = document.getElementById('quick-daily');
+  const weekly = document.getElementById('quick-weekly');
+  const monthly = document.getElementById('quick-monthly');
+
+  function formatDate(d){
+    const pad = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+
+  function setDaily(){
+    const today = new Date();
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (start) start.value = formatDate(d);
+    if (end) end.value = formatDate(d);
+    form.requestSubmit ? form.requestSubmit() : form.submit();
+  }
+
+  function setWeekly(){
+    const today = new Date();
+    const dow = today.getDay(); // 0=Sun..6=Sat
+    const mondayOffset = (dow === 0 ? -6 : 1 - dow); // Monday as start
+    const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + mondayOffset);
+    const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+    if (start) start.value = formatDate(monday);
+    if (end) end.value = formatDate(sunday);
+    form.requestSubmit ? form.requestSubmit() : form.submit();
+  }
+
+  function setMonthly(){
+    const today = new Date();
+    const first = new Date(today.getFullYear(), today.getMonth(), 1);
+    const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    if (start) start.value = formatDate(first);
+    if (end) end.value = formatDate(last);
+    form.requestSubmit ? form.requestSubmit() : form.submit();
+  }
+
+  if (daily) daily.addEventListener('click', setDaily);
+  if (weekly) weekly.addEventListener('click', setWeekly);
+  if (monthly) monthly.addEventListener('click', setMonthly);
+})();
+
+// Legacy chart bootstrap removed; now handled by fetchAnalytics()
+
+// Removed legacy metrics updater; covered by fetchAnalytics()
 </script>
 {% endblock %}

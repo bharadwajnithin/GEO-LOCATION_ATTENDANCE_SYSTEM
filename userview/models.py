@@ -126,7 +126,11 @@ class Class(models.Model):
         verbose_name_plural = 'Classes'
     
     def __str__(self):
-        return f"{self.name} - {self.staff.username}"
+        try:
+            staff_username = getattr(self.staff, 'username', None)
+        except Exception:
+            staff_username = None
+        return f"{self.name} - {staff_username}" if staff_username else f"{self.name}"
     
     @property
     def student_count(self):
@@ -153,4 +157,14 @@ class Attendance(models.Model):
         ordering = ['-timestamp']
     
     def __str__(self):
-        return f"{self.student.username} - {self.class_instance.name} - {self.timestamp.date()}"
+        try:
+            student_username = getattr(self.student, 'username', None)
+        except Exception:
+            student_username = None
+        try:
+            class_name = getattr(self.class_instance, 'name', None)
+        except Exception:
+            class_name = None
+        left = student_username or 'UnknownStudent'
+        mid = class_name or 'UnknownClass'
+        return f"{left} - {mid} - {self.timestamp.date()}"

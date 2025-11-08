@@ -2,10 +2,12 @@
 Views for the adminview app.
 """
 import json
+import logging
+import uuid
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db.models import Q, Count
@@ -14,6 +16,9 @@ from datetime import datetime, timedelta, time
 from .forms import ClassForm, GeoFenceForm, StudentEnrollmentForm, AttendanceFilterForm
 from userview.models import User, Class, Attendance, GeoFence
 from django.conf import settings
+from django.core.cache import cache
+
+logger = logging.getLogger(__name__)
 
 
 def _day_bounds(day_date):
@@ -627,14 +632,30 @@ def attendance_analytics(request):
     """
     View for attendance analytics and reporting.
     """
-    # Always treat GET the same; default filters when not provided
-    form = AttendanceFilterForm(request.GET or None)
-
-    # Determine classes visible to this user
+    # Determine classes visible to this user (needed for sanitization below)
     if request.user.role == 'admin':
         visible_classes = list(Class.objects.all())
     else:
         visible_classes = list(Class.objects.filter(staff=request.user))
+
+    # Always treat GET the same; default filters when not provided
+    # Sanitize incoming IDs to avoid DoesNotExist during form cleaning and widget rendering
+    params = None
+    if request.GET:
+        try:
+            params = request.GET.copy()
+            sid = params.get('student')
+            if sid and not User.objects.filter(id=sid, role='student').exists():
+                params.pop('student', None)
+            cid = params.get('class_instance')
+            if cid:
+                # Must exist and be within visible classes for this user
+                visible_ids = {c.id for c in visible_classes}
+                if (not Class.objects.filter(id=cid).exists()) or (int(str(cid)) not in visible_ids):
+                    params.pop('class_instance', None)
+        except Exception:
+            params = request.GET
+    form = AttendanceFilterForm(params or None)
 
     # Restrict form class choices to visible classes
     try:
@@ -644,7 +665,11 @@ def attendance_analytics(request):
         pass
 
     # Parse filters with sensible defaults
-    if form.is_valid():
+    try:
+        is_valid = form.is_valid()
+    except Exception:
+        is_valid = False
+    if is_valid:
         selected_class = form.cleaned_data.get('class_instance')
         selected_student = form.cleaned_data.get('student')
         start_date = form.cleaned_data.get('start_date')
@@ -654,6 +679,32 @@ def attendance_analytics(request):
         selected_student = None
         start_date = None
         end_date = None
+
+    # Constrain student choices based on selected class or visible classes
+    try:
+        if hasattr(form, 'fields') and 'student' in form.fields:
+            if selected_class:
+                # Students enrolled in the selected class
+                try:
+                    student_ids = list(selected_class.students.filter(role='student').values_list('id', flat=True))
+                except Exception:
+                    student_ids = []
+                form.fields['student'].queryset = User.objects.filter(role='student', id__in=student_ids)
+            else:
+                # All students across visible classes
+                agg_ids = set()
+                for cls in visible_classes:
+                    try:
+                        for sid in cls.students.filter(role='student').values_list('id', flat=True):
+                            agg_ids.add(sid)
+                    except Exception:
+                        continue
+                form.fields['student'].queryset = User.objects.filter(role='student', id__in=list(agg_ids))
+            # If current selected_student is not in queryset, ignore it
+            if selected_student and not form.fields['student'].queryset.filter(id=selected_student.id).exists():
+                selected_student = None
+    except Exception:
+        pass
 
     # Default to last 7 days if no date range provided
     today = timezone.now().date()
@@ -699,8 +750,24 @@ def attendance_analytics(request):
     from collections import defaultdict
     present_map = defaultdict(bool)  # key -> present?
     raw_records = []  # keep some raw records for table display
+    # Build sets of existing FK ids to avoid template DoesNotExist on orphan rows
+    try:
+        existing_user_ids = set(User.objects.values_list('id', flat=True))
+    except Exception:
+        existing_user_ids = set()
+    try:
+        existing_class_ids = set(Class.objects.values_list('id', flat=True))
+    except Exception:
+        existing_class_ids = set()
+
     for r in attendance_records:
-        day_key = r.timestamp.astimezone(timezone.get_current_timezone()).date()
+        # Skip orphaned FK rows
+        if r.student_id not in existing_user_ids or r.class_instance_id not in existing_class_ids:
+            continue
+        try:
+            day_key = timezone.localtime(r.timestamp).date()
+        except Exception:
+            day_key = r.timestamp.date()
         key = (r.class_instance_id, r.student_id, day_key)
         if r.is_present:
             present_map[key] = True or present_map[key]
@@ -709,6 +776,7 @@ def attendance_analytics(request):
 
     # Compute class-wise summary including unmarked as absent
     class_breakdown = {}
+    class_breakdown_rows = []
     total_expected_marks = 0
     total_present_marks = 0
     for cls in target_classes:
@@ -733,6 +801,14 @@ def attendance_analytics(request):
             'expected': expected,
             'percentage': perc,
         }
+        class_breakdown_rows.append({
+            'id': cls.id,
+            'name': cls.name,
+            'present': present,
+            'absent': absent,
+            'expected': expected,
+            'percentage': perc,
+        })
         total_expected_marks += expected
         total_present_marks += present
 
@@ -766,6 +842,57 @@ def attendance_analytics(request):
     raw_records.sort(key=lambda r: r.timestamp, reverse=True)
     records_for_table = raw_records[:200]
 
+    # Compute enrolled/present/absent for cards and charts
+    single_day = len(day_list) == 1
+    enrolled_students_count = 0
+    try:
+        if selected_class:
+            enrolled_students_count = selected_class.students.filter(role='student').count()
+        else:
+            # Sum across visible/target classes
+            enrolled_students_count = sum(
+                cls.students.filter(role='student').count() for cls in target_classes
+            )
+    except Exception:
+        enrolled_students_count = 0
+
+    if selected_class and single_day:
+        # Per-student counts for the selected day
+        day = day_list[0] if day_list else None
+        present_count = 0
+        if day is not None:
+            try:
+                students_in_class = list(selected_class.students.filter(role='student'))
+            except Exception:
+                students_in_class = []
+            for s in students_in_class:
+                if present_map.get((selected_class.id, s.id, day), False):
+                    present_count += 1
+        absent_count = max(0, enrolled_students_count - present_count)
+        percentage_for_cards = round((present_count / enrolled_students_count * 100) if enrolled_students_count > 0 else 0, 2)
+    else:
+        # Aggregate marks across the selected range
+        present_count = total_present_marks
+        absent_count = max(0, total_expected_marks - total_present_marks)
+        percentage_for_cards = attendance_percentage
+
+    # Build trend data (daily present counts) when a specific class is selected
+    trend_data = []
+    if selected_class and day_list:
+        try:
+            students_in_class_ids = list(selected_class.students.filter(role='student').values_list('id', flat=True))
+        except Exception:
+            students_in_class_ids = []
+        for d in day_list:
+            present_count_for_day = 0
+            for sid in students_in_class_ids:
+                if present_map.get((selected_class.id, sid, d), False):
+                    present_count_for_day += 1
+            trend_data.append({
+                'date': d.strftime('%Y-%m-%d'),
+                'present': present_count_for_day,
+            })
+
     context = {
         'form': form,
         'attendance_records': records_for_table,
@@ -773,10 +900,679 @@ def attendance_analytics(request):
         'present_records': total_present_marks,
         'attendance_percentage': attendance_percentage,
         'class_breakdown': class_breakdown,
+        'class_breakdown_rows': class_breakdown_rows,
         'student_breakdown': student_breakdown,
         'date_range': {'start': start_date, 'end': end_date},
+        # New metrics for UI cards and charts
+        'enrolled_students': enrolled_students_count,
+        'present_count': present_count,
+        'absent_count': absent_count,
+        'cards_percentage': percentage_for_cards,
+        'analytics_data': {
+            'present': present_count,
+            'absent': absent_count,
+        },
+        'trend_data': trend_data,
+        'has_selected_class': bool(selected_class),
+        'query_string': request.META.get('QUERY_STRING', ''),
     }
     return render(request, 'adminview/attendance_analytics.html', context)
+
+
+@login_required
+@user_passes_test(is_staff_member)
+def attendance_analytics_api(request):
+    """
+    Consolidated analytics API
+    GET params:
+      class_id (optional, int) - restrict to one class
+      start_date, end_date (YYYY-MM-DD)
+      student_id (optional, int)
+      granularity (daily|weekly|monthly) - currently only affects trend grouping; default daily
+      lookback (optional, int) - number of periods to include in trend when dates omitted
+      export=csv (optional) - stream CSV for class-wise breakdown in current filter
+
+    Returns JSON:
+      totals: {enrolled, expected, present, absent, percentage}
+      trend: [{label, date, present}]
+      classes: [{id,name,present,absent,expected,percentage}]
+    """
+    corr_id = str(uuid.uuid4())
+    try:
+        # Authorization scope: visible classes
+        if request.user.role == 'admin':
+            visible_classes = list(Class.objects.all())
+        else:
+            visible_classes = list(Class.objects.filter(staff=request.user))
+
+        # Parse inputs
+        def _parse_int(v):
+            try:
+                return int(v)
+            except Exception:
+                return None
+        def _parse_date(s):
+            try:
+                return datetime.strptime(s, '%Y-%m-%d').date()
+            except Exception:
+                return None
+
+        class_id = _parse_int(request.GET.get('class_id'))
+        student_id = _parse_int(request.GET.get('student_id'))
+        start_date = _parse_date(request.GET.get('start_date', ''))
+        end_date = _parse_date(request.GET.get('end_date', ''))
+        granularity = (request.GET.get('granularity') or 'daily').lower()
+        if granularity not in ('daily','weekly','monthly'):
+            return JsonResponse({'error': 'Invalid granularity', 'correlation_id': corr_id}, status=400)
+        lookback = _parse_int(request.GET.get('lookback'))
+
+        # Defaults for date range
+        today = timezone.now().date()
+        if not start_date and not end_date:
+            if lookback and lookback > 0:
+                start_date = today - timedelta(days=lookback-1)
+                end_date = today
+            else:
+                start_date = today - timedelta(days=6)
+                end_date = today
+        elif start_date and not end_date:
+            end_date = today
+        elif end_date and not start_date:
+            start_date = end_date
+
+        if start_date and end_date and start_date > end_date:
+            return JsonResponse({'error': 'start_date must be on or before end_date', 'correlation_id': corr_id}, status=400)
+
+        # Resolve selected_class and student
+        selected_class = None
+        if class_id:
+            try:
+                selected_class = next(c for c in visible_classes if c.id == class_id)
+            except StopIteration:
+                return JsonResponse({'error': 'Class not found or not permitted', 'correlation_id': corr_id}, status=404)
+        selected_student = None
+        if student_id:
+            try:
+                s = User.objects.get(id=student_id, role='student')
+            except User.DoesNotExist:
+                return JsonResponse({'error': 'Student not found', 'correlation_id': corr_id}, status=404)
+            # If class filter provided, ensure student belongs to it
+            if selected_class and not selected_class.students.filter(id=s.id).exists():
+                return JsonResponse({'error': 'Student not in selected class', 'correlation_id': corr_id}, status=400)
+            selected_student = s
+
+        # Cache key
+        cache_key = f"analytics:{request.user.id}:{class_id}:{student_id}:{start_date}:{end_date}:{granularity}"
+        cached = cache.get(cache_key)
+        if cached and request.GET.get('export') != 'csv':
+            cached['correlation_id'] = corr_id
+            return JsonResponse(cached)
+
+        # Build day list
+        day_list = []
+        if start_date and end_date:
+            d = start_date
+            while d <= end_date:
+                day_list.append(d)
+                d += timedelta(days=1)
+
+        # Target classes
+        target_classes = [selected_class] if selected_class else visible_classes
+
+        # Attendance window
+        if day_list and target_classes:
+            day_start, _ = _day_bounds(day_list[0])
+            _, day_end = _day_bounds(day_list[-1])
+            qs = Attendance.objects.filter(
+                class_instance__in=target_classes,
+                timestamp__gte=day_start,
+                timestamp__lt=day_end,
+            ).values('class_instance_id', 'student_id', 'timestamp', 'is_present')
+            if selected_student:
+                qs = qs.filter(student_id=selected_student.id)
+            rows = list(qs)
+        else:
+            rows = []
+
+        # Build present_map keyed by (class_id, student_id, day)
+        present_map = {}
+        for r in rows:
+            try:
+                dkey = timezone.localtime(r['timestamp']).date()
+            except Exception:
+                dkey = r['timestamp'].date()
+            if r['is_present']:
+                present_map[(r['class_instance_id'], r['student_id'], dkey)] = True
+
+        # Aggregations
+        classes_payload = []
+        total_expected = 0
+        total_present = 0
+        for cls in target_classes:
+            try:
+                student_ids = list(cls.students.filter(role='student').values_list('id', flat=True))
+            except Exception:
+                student_ids = []
+            days_count = len(day_list)
+            expected = len(student_ids) * days_count
+            present = 0
+            if days_count and student_ids:
+                for d in day_list:
+                    for sid in student_ids:
+                        if present_map.get((cls.id, sid, d), False):
+                            present += 1
+            absent = max(0, expected - present)
+            perc = round((present / expected * 100) if expected else 0, 2)
+            classes_payload.append({
+                'id': cls.id,
+                'name': cls.name,
+                'present': present,
+                'absent': absent,
+                'expected': expected,
+                'percentage': perc,
+            })
+            total_expected += expected
+            total_present += present
+
+        totals = {
+            'enrolled': sum(
+                cls.students.filter(role='student').count() for cls in target_classes
+            ) if target_classes else 0,
+            'expected': total_expected,
+            'present': total_present,
+            'absent': max(0, total_expected - total_present),
+            'percentage': round((total_present / total_expected * 100) if total_expected else 0, 2)
+        }
+
+        # Trend with granularity grouping
+        # Build per-day aggregates first
+        by_day_present = {}
+        for (cid, sid, d), is_p in present_map.items():
+            if is_p:
+                by_day_present[d] = by_day_present.get(d, 0) + 1
+
+        def _week_start(dt):
+            # Monday as week start
+            dow = dt.weekday()  # 0=Mon
+            return dt - timedelta(days=dow)
+
+        def _month_start(dt):
+            return dt.replace(day=1)
+
+        trend = []
+        if granularity == 'daily':
+            series = day_list
+            for d in series[-12:]:  # last up to 12 days
+                trend.append({
+                    'date': d.strftime('%Y-%m-%d'),
+                    'label': d.strftime('%b %d'),
+                    'present': by_day_present.get(d, 0)
+                })
+        elif granularity == 'weekly':
+            # group days by week start
+            buckets = {}
+            order = []
+            for d in day_list:
+                ws = _week_start(d)
+                if ws not in buckets:
+                    buckets[ws] = 0
+                    order.append(ws)
+                buckets[ws] += by_day_present.get(d, 0)
+            for ws in order[-12:]:  # last up to 12 weeks
+                trend.append({
+                    'date': ws.strftime('%Y-%m-%d'),
+                    'label': f"Wk of {ws.strftime('%b %d')}",
+                    'present': buckets.get(ws, 0)
+                })
+        else:  # monthly
+            buckets = {}
+            order = []
+            for d in day_list:
+                ms = _month_start(d)
+                if ms not in buckets:
+                    buckets[ms] = 0
+                    order.append(ms)
+                buckets[ms] += by_day_present.get(d, 0)
+            for ms in order[-12:]:  # last up to 12 months
+                trend.append({
+                    'date': ms.strftime('%Y-%m'),
+                    'label': ms.strftime('%b %Y'),
+                    'present': buckets.get(ms, 0)
+                })
+
+        # CSV export of class breakdown
+        if request.GET.get('export') == 'csv':
+            import csv
+            resp = HttpResponse(content_type='text/csv')
+            resp['Content-Disposition'] = 'attachment; filename="attendance_analytics.csv"'
+            w = csv.writer(resp)
+            w.writerow(['Class','Present','Absent','Expected','Percentage'])
+            for row in classes_payload:
+                w.writerow([row['name'], row['present'], row['absent'], row['expected'], row['percentage']])
+            return resp
+
+        payload = {
+            'totals': totals,
+            'trend': trend,
+            'classes': classes_payload,
+        }
+        cache.set(cache_key, payload, timeout=300)
+        payload['correlation_id'] = corr_id
+        logger.info('attendance_analytics_api ok corr_id=%s user=%s', corr_id, request.user.id)
+        return JsonResponse(payload)
+    except Exception as e:
+        logger.exception('attendance_analytics_api error corr_id=%s err=%s', corr_id, e)
+        return JsonResponse({'error': 'Internal server error', 'correlation_id': corr_id}, status=500)
+
+
+@login_required
+@user_passes_test(is_staff_member)
+def attendance_analytics_drilldown(request):
+    """
+    Drilldown API returning student-level attendance records for a selected class or all visible classes.
+    GET params: class_id (optional), start_date, end_date, page, page_size, q (student name contains), export=csv
+    Returns: { results: [ {student_id, student_name, class_id, class_name, date, is_present} ], page, page_size, total }
+    """
+    corr_id = str(uuid.uuid4())
+    try:
+        # Visible classes
+        if request.user.role == 'admin':
+            visible_classes = list(Class.objects.all())
+        else:
+            visible_classes = list(Class.objects.filter(staff=request.user))
+        visible_ids = {c.id for c in visible_classes}
+
+        def _parse_int(v):
+            try:
+                return int(v)
+            except Exception:
+                return None
+        def _parse_date(s):
+            try:
+                return datetime.strptime(s, '%Y-%m-%d').date()
+            except Exception:
+                return None
+
+        class_id = _parse_int(request.GET.get('class_id'))
+        start_date = _parse_date(request.GET.get('start_date',''))
+        end_date = _parse_date(request.GET.get('end_date',''))
+        q = (request.GET.get('q') or '').strip()
+        page = _parse_int(request.GET.get('page')) or 1
+        page_size = _parse_int(request.GET.get('page_size')) or 25
+        page_size = max(1, min(page_size, 200))
+
+        today = timezone.now().date()
+        if not start_date and not end_date:
+            start_date = today - timedelta(days=6)
+            end_date = today
+        elif start_date and not end_date:
+            end_date = today
+        elif end_date and not start_date:
+            start_date = end_date
+        if start_date > end_date:
+            return JsonResponse({'error': 'start_date must be on or before end_date', 'correlation_id': corr_id}, status=400)
+
+        # Classes scope
+        if class_id:
+            if class_id not in visible_ids:
+                return JsonResponse({'error': 'Class not found or not permitted', 'correlation_id': corr_id}, status=404)
+            target_ids = [class_id]
+        else:
+            target_ids = list(visible_ids)
+
+        # Date window
+        day_start, _ = _day_bounds(start_date)
+        _, day_end = _day_bounds(end_date)
+
+        qs = Attendance.objects.filter(
+            class_instance_id__in=target_ids,
+            timestamp__gte=day_start,
+            timestamp__lt=day_end,
+        ).select_related('student','class_instance').order_by('-timestamp')
+        if q:
+            qs = qs.filter(
+                Q(student__first_name__icontains=q) |
+                Q(student__last_name__icontains=q) |
+                Q(student__username__icontains=q)
+            )
+
+        # CSV export
+        if request.GET.get('export') == 'csv':
+            import csv
+            resp = HttpResponse(content_type='text/csv')
+            resp['Content-Disposition'] = 'attachment; filename="attendance_drilldown.csv"'
+            w = csv.writer(resp)
+            w.writerow(['Time','Student','Class','Present'])
+            for r in qs.iterator():
+                try:
+                    sname = r.student.get_full_name() or r.student.username
+                except Exception:
+                    sname = str(r.student_id)
+                try:
+                    cname = r.class_instance.name
+                except Exception:
+                    cname = str(r.class_instance_id)
+                w.writerow([
+                    timezone.localtime(r.timestamp).strftime('%Y-%m-%d %H:%M'),
+                    sname,
+                    cname,
+                    'Yes' if r.is_present else 'No'
+                ])
+            return resp
+
+        total = qs.count()
+        start_idx = (page-1) * page_size
+        end_idx = start_idx + page_size
+        page_qs = list(qs[start_idx:end_idx])
+        results = []
+        for r in page_qs:
+            try:
+                sname = r.student.get_full_name() or r.student.username
+            except Exception:
+                sname = str(r.student_id)
+            try:
+                cname = r.class_instance.name
+            except Exception:
+                cname = str(r.class_instance_id)
+            results.append({
+                'student_id': r.student_id,
+                'student_name': sname,
+                'class_id': r.class_instance_id,
+                'class_name': cname,
+                'timestamp': timezone.localtime(r.timestamp).strftime('%Y-%m-%d %H:%M'),
+                'is_present': bool(r.is_present),
+            })
+
+        payload = {
+            'results': results,
+            'page': page,
+            'page_size': page_size,
+            'total': total,
+            'correlation_id': corr_id,
+        }
+        logger.info('attendance_analytics_drilldown ok corr_id=%s user=%s', corr_id, request.user.id)
+        return JsonResponse(payload)
+    except Exception as e:
+        logger.exception('attendance_analytics_drilldown error corr_id=%s err=%s', corr_id, e)
+        return JsonResponse({'error': 'Internal server error', 'correlation_id': corr_id}, status=500)
+
+
+@login_required
+@user_passes_test(is_staff_member)
+def attendance_analytics_export_class_csv(request):
+    """
+    Export class-wise breakdown as CSV for the current filters.
+    """
+    # Reuse filter form
+    form = AttendanceFilterForm(request.GET or None)
+    if form.is_valid():
+        selected_class = form.cleaned_data.get('class_instance')
+        start_date = form.cleaned_data.get('start_date')
+        end_date = form.cleaned_data.get('end_date')
+    else:
+        selected_class = None
+        start_date = None
+        end_date = None
+
+    today = timezone.now().date()
+    if not start_date and not end_date:
+        start_date = today - timedelta(days=6)
+        end_date = today
+    elif start_date and not end_date:
+        end_date = today
+    elif end_date and not start_date:
+        start_date = end_date
+
+    day_list = []
+    if start_date and end_date and start_date <= end_date:
+        cur = start_date
+        while cur <= end_date:
+            day_list.append(cur)
+            cur += timedelta(days=1)
+
+    # Determine visible classes
+    if request.user.role == 'admin':
+        visible_classes = list(Class.objects.all())
+    else:
+        visible_classes = list(Class.objects.filter(staff=request.user))
+
+    if selected_class:
+        target_classes = [selected_class] if selected_class in visible_classes else []
+    else:
+        target_classes = visible_classes
+
+    # Build present_map like in analytics
+    present_map = {}
+    if day_list and target_classes:
+        day_start, _ = _day_bounds(day_list[0])
+        _, day_end = _day_bounds(day_list[-1])
+        attendance_qs = Attendance.objects.filter(
+            class_instance__in=target_classes,
+            timestamp__gte=day_start,
+            timestamp__lt=day_end,
+        ).values('class_instance_id', 'student_id', 'timestamp', 'is_present')
+        for r in attendance_qs:
+            try:
+                day_key = timezone.localtime(r['timestamp']).date()
+            except Exception:
+                day_key = r['timestamp'].date()
+            key = (r['class_instance_id'], r['student_id'], day_key)
+            if r['is_present']:
+                present_map[key] = True
+
+    # Compute class breakdown
+    import csv
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="class_breakdown.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['Class', 'Present', 'Absent', 'Expected', 'Percentage'])
+
+    for cls in target_classes:
+        try:
+            enrolled_students = list(cls.students.filter(role='student').values_list('id', flat=True))
+        except Exception:
+            enrolled_students = []
+        days_count = len(day_list)
+        expected = len(enrolled_students) * days_count
+        present = 0
+        if days_count > 0 and enrolled_students:
+            for d in day_list:
+                for sid in enrolled_students:
+                    if present_map.get((cls.id, sid, d), False):
+                        present += 1
+        absent = max(0, expected - present)
+        perc = round((present / expected * 100) if expected > 0 else 0, 2)
+        writer.writerow([cls.name, present, absent, expected, perc])
+
+    return response
+
+
+@login_required
+@user_passes_test(is_staff_member)
+def attendance_analytics_export_student_csv(request):
+    """
+    Export per-student breakdown CSV for the selected class and current date range.
+    """
+    form = AttendanceFilterForm(request.GET or None)
+    if not form.is_valid() or not form.cleaned_data.get('class_instance'):
+        return HttpResponse('Class must be selected for per-student export', status=400)
+
+    selected_class = form.cleaned_data.get('class_instance')
+    start_date = form.cleaned_data.get('start_date')
+    end_date = form.cleaned_data.get('end_date')
+
+    today = timezone.now().date()
+    if not start_date and not end_date:
+        start_date = today - timedelta(days=6)
+        end_date = today
+    elif start_date and not end_date:
+        end_date = today
+    elif end_date and not start_date:
+        start_date = end_date
+
+    day_list = []
+    if start_date and end_date and start_date <= end_date:
+        cur = start_date
+        while cur <= end_date:
+            day_list.append(cur)
+            cur += timedelta(days=1)
+
+    # Build present map for selected class only
+    present_map = {}
+    if day_list:
+        day_start, _ = _day_bounds(day_list[0])
+        _, day_end = _day_bounds(day_list[-1])
+        attendance_qs = Attendance.objects.filter(
+            class_instance=selected_class,
+            timestamp__gte=day_start,
+            timestamp__lt=day_end,
+        ).values('student_id', 'timestamp', 'is_present')
+        for r in attendance_qs:
+            try:
+                day_key = timezone.localtime(r['timestamp']).date()
+            except Exception:
+                day_key = r['timestamp'].date()
+            key = (selected_class.id, r['student_id'], day_key)
+            if r['is_present']:
+                present_map[key] = True
+
+    # Prepare CSV
+    import csv
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="per_student_breakdown.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['Student', 'Present Days', 'Absent Days', 'Total Days', 'Percentage'])
+
+    try:
+        students_in_class = list(selected_class.students.filter(role='student'))
+    except Exception:
+        students_in_class = []
+
+    total_days = len(day_list)
+    for s in students_in_class:
+        present_days = 0
+        for d in day_list:
+            if present_map.get((selected_class.id, s.id, d), False):
+                present_days += 1
+        absent_days = max(0, total_days - present_days)
+        perc = round((present_days / total_days * 100) if total_days > 0 else 0, 2)
+        writer.writerow([s.get_full_name() or s.username, present_days, absent_days, total_days, perc])
+
+    return response
+
+
+@login_required
+@user_passes_test(is_staff_member)
+def attendance_analytics_metrics(request):
+    """
+    JSON metrics for Attendance Analytics page to update without full reload.
+    Requires: class_id (int). Optional: start_date (YYYY-MM-DD), end_date (YYYY-MM-DD).
+    Returns: { enrolled, present, absent, percentage, trend: [{date,label,present}] }
+    """
+    try:
+        class_id = int(request.GET.get('class_id', '0'))
+    except Exception:
+        return JsonResponse({'error': 'Invalid class_id'}, status=400)
+
+    # Visible classes for this user
+    if request.user.role == 'admin':
+        visible_classes = list(Class.objects.all())
+    else:
+        visible_classes = list(Class.objects.filter(staff=request.user))
+    visible_ids = {c.id for c in visible_classes}
+    if class_id not in visible_ids:
+        return JsonResponse({'error': 'Class not found or not permitted'}, status=404)
+
+    try:
+        selected_class = next(c for c in visible_classes if c.id == class_id)
+    except StopIteration:
+        return JsonResponse({'error': 'Class not found'}, status=404)
+
+    # Dates
+    def _parse_date(s):
+        try:
+            return datetime.strptime(s, '%Y-%m-%d').date()
+        except Exception:
+            return None
+
+    start_date = _parse_date(request.GET.get('start_date', ''))
+    end_date = _parse_date(request.GET.get('end_date', ''))
+    today = timezone.now().date()
+    if not start_date and not end_date:
+        start_date = today - timedelta(days=6)
+        end_date = today
+    elif start_date and not end_date:
+        end_date = today
+    elif end_date and not start_date:
+        start_date = end_date
+
+    # Build day list
+    day_list = []
+    if start_date and end_date and start_date <= end_date:
+        d = start_date
+        while d <= end_date:
+            day_list.append(d)
+            d += timedelta(days=1)
+
+    # Enrolled students count
+    try:
+        enrolled_ids = list(selected_class.students.filter(role='student').values_list('id', flat=True))
+    except Exception:
+        enrolled_ids = []
+    enrolled = len(enrolled_ids)
+
+    # Attendance within range
+    present_map = {}
+    present = 0
+    if day_list:
+        day_start, _ = _day_bounds(day_list[0])
+        _, day_end = _day_bounds(day_list[-1])
+        qs = Attendance.objects.filter(
+            class_instance=selected_class,
+            timestamp__gte=day_start,
+            timestamp__lt=day_end,
+        ).values('student_id', 'timestamp', 'is_present')
+        for r in qs:
+            try:
+                day_key = timezone.localtime(r['timestamp']).date()
+            except Exception:
+                day_key = r['timestamp'].date()
+            key = (r['student_id'], day_key)
+            if r['is_present']:
+                present_map[key] = True
+        # Count present marks across days for enrolled students
+        for d in day_list:
+            for sid in enrolled_ids:
+                if present_map.get((sid, d), False):
+                    present += 1
+
+    expected = enrolled * len(day_list)
+    absent = max(0, expected - present)
+    percentage = round((present / expected * 100) if expected > 0 else 0, 2)
+
+    # Trend: last up to 5 sessions (days with any record) within range
+    # Build a sorted unique list of days that had any records for this class within range
+    days_with_records = []
+    if day_list:
+        # Map day -> present count for that day
+        by_day_present = {d: 0 for d in day_list}
+        for (sid, d), is_p in present_map.items():
+            if is_p and d in by_day_present:
+                by_day_present[d] += 1
+        days_with_records = [d for d in day_list if by_day_present.get(d, 0) or True]
+        # Take last 5 days from range
+        recent_days = days_with_records[-5:]
+        trend = [{'date': d.strftime('%Y-%m-%d'), 'label': d.strftime('%b %d'), 'present': by_day_present.get(d, 0)} for d in recent_days]
+    else:
+        trend = []
+
+    return JsonResponse({
+        'enrolled': enrolled,
+        'present': present,
+        'absent': absent,
+        'percentage': percentage,
+        'trend': trend,
+    })
 
 
 @login_required
@@ -801,7 +1597,7 @@ def save_geofence_coordinates(request):
                 geofence = GeoFence.objects.get(id=geofence_id)
                 geofence.coordinates = coordinates
                 geofence.save()
-                return JsonResponse({'success': True, 'message': 'Geo-fence updated successfully'})
+                return JsonResponse({'success': True, 'message': 'Geo-fence updated successfully', 'geofence_id': geofence.id})
             except GeoFence.DoesNotExist:
                 return JsonResponse({'success': False, 'error': 'Geo-fence not found'}, status=404)
         else:
