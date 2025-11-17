@@ -116,6 +116,22 @@
 
 
 <!-- Your Classes -->
+<!-- Geo-fences Map Overview -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-map me-2"></i>Geo-fences Map
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="staffMap" style="height: 380px; border-radius: 8px; border: 1px solid #dee2e6;"></div>
+            </div>
+        </div>
+    </div>
+    
+</div>
 <div class="row mb-4">
     <div class="col-12">
         <div class="card">
@@ -264,7 +280,18 @@
   let map, drawingManager, currentPolygon = null;
   
   function init(){
-    map = new google.maps.Map(document.getElementById('staffMap'), { 
+    // Ensure Google Maps API and container are available
+    if (typeof window.google === 'undefined' || !google.maps) {
+      setTimeout(init, 500);
+      return;
+    }
+    const mapEl = document.getElementById('staffMap');
+    if (!mapEl) {
+      console.warn('staff_home: #staffMap container not found');
+      return;
+    }
+
+    map = new google.maps.Map(mapEl, { 
       center: {lat: 0, lng: 0}, 
       zoom: 2,
       mapTypeControl: true,
@@ -411,7 +438,14 @@
     }
   };
   
-  if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
+  function safeInit(){
+    if (typeof window.google !== 'undefined' && google.maps) {
+      init();
+    } else {
+      setTimeout(safeInit, 500);
+    }
+  }
+  if (document.readyState !== 'loading') safeInit(); else document.addEventListener('DOMContentLoaded', safeInit);
 })();
 </script>
 <script>

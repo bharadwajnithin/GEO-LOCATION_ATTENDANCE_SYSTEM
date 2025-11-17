@@ -206,8 +206,13 @@ def student_home(request):
     min_required = int(getattr(settings, 'FACE_MIN_ENROLL_SAMPLES', 8))
     enrollment_pending = emb_count < min_required
 
-    # Get classes where student is enrolled
-    enrolled_classes = request.user.classes_enrolled.all()
+    # Get classes where student is enrolled and active
+    # Work around djongo SQLDecodeError on boolean WHERE in M2M join by filtering in Python
+    try:
+        _enrolled_qs = request.user.classes_enrolled.all()
+    except Exception:
+        _enrolled_qs = []
+    enrolled_classes = [c for c in _enrolled_qs if getattr(c, 'is_active', True)]
     
     # Get today's attendance status for each class
     today_attendance = {}
@@ -313,6 +318,8 @@ def mark_attendance(request):
                 'success': False, 
                 'error': 'Class not found'
             }, status=404)
+        if not getattr(class_instance, 'is_active', True):
+            return JsonResponse({'success': False, 'error': 'This class is currently disabled'}, status=400)
         
         # Check if student is enrolled in this class
         if class_instance not in request.user.classes_enrolled.all():
@@ -805,6 +812,8 @@ def identify_mark_attendance(request):
             class_instance = Class.objects.get(id=class_id)
         except Class.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Class not found'}, status=404)
+        if not getattr(class_instance, 'is_active', True):
+            return JsonResponse({'success': False, 'error': 'This class is currently disabled'}, status=400)
 
         # Verify location first (enforce accuracy threshold if provided)
         # Ensure class has a configured geofence

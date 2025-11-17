@@ -32,6 +32,12 @@
           <button type="button" class="btn btn-outline-secondary btn-sm" id="quick-weekly"><i class="far fa-calendar-week me-1"></i>This Week</button>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="quick-monthly"><i class="far fa-calendar-alt me-1"></i>This Month</button>
         </div>
+        <div class="btn-group" role="group" aria-label="Metric mode">
+          <input type="radio" class="btn-check" name="metric_mode" id="modeHead" value="headcount" autocomplete="off" checked>
+          <label class="btn btn-outline-primary btn-sm" for="modeHead" title="Unique students over the selected range">Headcount</label>
+          <input type="radio" class="btn-check" name="metric_mode" id="modeMarks" value="marks" autocomplete="off">
+          <label class="btn btn-outline-primary btn-sm" for="modeMarks" title="Attendance marks across all days (Present marks vs Expected marks)">Marks</label>
+        </div>
         <button id="analytics-filter-btn" class="btn btn-primary" type="submit">
           <span id="analytics-filter-spinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
           <i class="fas fa-filter me-1"></i>Apply Filters
@@ -297,6 +303,7 @@
   const startInput = document.querySelector('input[name="start_date"]');
   const endInput = document.querySelector('input[name="end_date"]');
   const dateError = document.getElementById('date-error');
+  const modeRadios = document.querySelectorAll('input[name="metric_mode"]');
 
   function setLoading(on){
     if (btn) btn.disabled = on;
@@ -353,7 +360,18 @@
     try{ if (chartTrend) { chartTrend.destroy(); chartTrend = null; } } catch(e){}
   }
 
-  function updateCards(totals){
+  function getMode(){
+    let sel = 'headcount';
+    modeRadios.forEach(r=>{ if (r.checked) sel = r.value; });
+    return sel;
+  }
+
+  function pickTotals(payload){
+    return getMode() === 'headcount' ? (payload.totals_headcount || payload.totals || {}) : (payload.totals_marks || payload.totals || {});
+  }
+
+  function updateCardsFromPayload(payload){
+    const totals = pickTotals(payload);
     document.getElementById('card-enrolled').textContent = totals.enrolled ?? 0;
     document.getElementById('card-present').textContent = totals.present ?? 0;
     document.getElementById('card-absent').textContent = totals.absent ?? 0;
@@ -364,8 +382,9 @@
     const pieEl = document.getElementById('attendancePie');
     const barEl = document.getElementById('attendanceBar');
     const trendEl = document.getElementById('attendanceTrend');
-    const present = payload.totals?.present ?? 0;
-    const absent = payload.totals?.absent ?? 0;
+    const totals = pickTotals(payload);
+    const present = totals?.present ?? 0;
+    const absent = totals?.absent ?? 0;
     const labels = ['Present','Absent'];
     const colors = ['#28a745','#dc3545'];
     destroyCharts();
@@ -399,22 +418,37 @@
     }
   }
 
+  let lastPayload = null;
+
+  let _fetchCtrl = null;
+  let _debounceTimer = null;
   async function fetchAnalytics(){
     if (!validateDates()) return;
     setLoading(true);
     const params = getFilters();
+    // cancel previous request if in-flight
+    if (_fetchCtrl) { try{ _fetchCtrl.abort(); }catch(_){} }
+    _fetchCtrl = new AbortController();
     try{
-      const res = await fetch(buildApiUrl(params), { credentials: 'same-origin' });
+      const res = await fetch(buildApiUrl(params), { credentials: 'same-origin', signal: _fetchCtrl.signal });
       const data = await res.json();
       if (!res.ok){ throw new Error(data?.error || 'Request failed'); }
-      updateCards(data.totals || {});
+      lastPayload = data;
+      updateCardsFromPayload(data);
       renderCharts(data);
     } catch(e){
-      // basic error toast
-      alert('Failed to load analytics. Please try again.');
+      if (e.name !== 'AbortError'){
+        alert('Failed to load analytics. Please try again.');
+      }
     } finally {
       setLoading(false);
+      _fetchCtrl = null;
     }
+  }
+
+  function fetchAnalyticsDebounced(){
+    if (_debounceTimer) clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(fetchAnalytics, 300);
   }
 
   function openDrilldown(){
@@ -458,7 +492,7 @@
     fetchAnalytics();
   });
   form.querySelectorAll('select, input[type="date"], input[type="radio"]').forEach(el=>{
-    el.addEventListener('change', ()=>{ if (el.type === 'date') validateDates(); fetchAnalytics(); });
+    el.addEventListener('change', ()=>{ if (el.type === 'date') validateDates(); fetchAnalyticsDebounced(); });
   });
 
   // Quick ranges
@@ -501,8 +535,13 @@
     el.addEventListener('click', (ev)=>{
       const cid = ev.currentTarget.getAttribute('data-class-id') || ev.currentTarget.dataset.classId;
       const sel = form.querySelector('select[name="class_instance"]');
-      if (cid && sel){ sel.value = cid; fetchAnalytics(); }
+      if (cid && sel){ sel.value = cid; fetchAnalyticsDebounced(); }
     });
+  });
+
+  // Toggle mode re-renders cards/charts from last payload without refetch
+  modeRadios.forEach(r=>{
+    r.addEventListener('change', ()=>{ if (lastPayload){ updateCardsFromPayload(lastPayload); renderCharts(lastPayload); } });
   });
 
   // Initial fetch to sync dynamic charts/cards with server
@@ -519,7 +558,6 @@
       t = setTimeout(()=> loadDrilldownPage(1), 400);
     });
   })();
-})();
 
 // Quick date range buttons (Daily/Weekly/Monthly)
 (function(){

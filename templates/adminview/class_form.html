@@ -40,7 +40,10 @@
 {% if google_maps_api_key %}
 <script>
   // Provide all geofence coordinates keyed by id for the dropdown to preview on map
-  window.geofenceData = {{ geofence_data_json|default:'{}'|safe }};
+  (function(){
+    var __gjson = '{{ geofence_data_json|default:"{}"|escapejs }}';
+    try { window.geofenceData = JSON.parse(__gjson || '{}'); } catch(e){ window.geofenceData = {}; }
+  })();
   // Enhance options with data-coordinates attribute for direct access if needed
   document.addEventListener('DOMContentLoaded', function(){
     try {
@@ -59,9 +62,9 @@
       }
     } catch(e) { console.warn('Could not bind geofence option data:', e); }
   });
-</script>
-<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}"></script>
-<script>
+ </script>
+ <script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=marker&v=weekly" async defer></script>
+ <script>
 (function(){
   const geolocationSelect = document.getElementById('id_geolocation');
   const mapElement = document.getElementById('classLocationMap');
@@ -69,6 +72,10 @@
   
   function init(){
     if (!mapElement) return;
+    if (typeof window.google === 'undefined' || !google.maps) {
+      // Google Maps not ready yet
+      return;
+    }
     
     // Initialize map
     map = new google.maps.Map(mapElement, { 
@@ -145,19 +152,23 @@
     path.forEach(p => bounds.extend(new google.maps.LatLng(p.lat, p.lng)));
     map.fitBounds(bounds);
     
-    // Add center marker
+    // Add center marker (Advanced Marker)
     const center = bounds.getCenter();
-    new google.maps.Marker({
+    new google.maps.marker.AdvancedMarkerElement({
       position: center,
       map: map,
-      title: 'Class Location Center',
-      icon: {
-        url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
-      }
+      title: 'Class Location Center'
     });
   }
   
-  if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
+  function safeInit(){
+    if (typeof window.google !== 'undefined' && google.maps) {
+      init();
+    } else {
+      setTimeout(safeInit, 250);
+    }
+  }
+  if (document.readyState !== 'loading') safeInit(); else document.addEventListener('DOMContentLoaded', safeInit);
 })();
 </script>
 {% endif %}

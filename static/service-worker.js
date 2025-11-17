@@ -1,5 +1,5 @@
 /* Basic PWA Service Worker for Django app */
-const CACHE_NAME = 'attendance-pwa-v1';
+const CACHE_NAME = 'attendance-pwa-v2';
 const OFFLINE_URL = '/static/offline.html';
 const PRECACHE_URLS = [
   '/',
@@ -24,7 +24,21 @@ self.addEventListener('activate', event => {
 // Network-first for navigation, cache-first for others
 self.addEventListener('fetch', event => {
   const req = event.request;
+  const url = new URL(req.url);
 
+  // Always bypass cross-origin requests (avoid breaking Google Maps, CDNs, etc.)
+  if (url.origin !== self.location.origin) {
+    // Special case: explicitly allow Google Maps domains without caching
+    if (url.hostname.endsWith('googleapis.com') || url.hostname.endsWith('gstatic.com')) {
+      event.respondWith(fetch(req));
+      return;
+    }
+    // For other cross-origin requests, just pass-through
+    event.respondWith(fetch(req));
+    return;
+  }
+
+  // Navigation requests: network-first, fallback to cache/offline
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req).then(resp => {
@@ -39,14 +53,32 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Only cache GET same-origin requests
+  if (req.method !== 'GET') {
+    event.respondWith(fetch(req));
+    return;
+  }
+
+  // Static assets: cache-first
   event.respondWith(
     caches.match(req).then(cached => {
       if (cached) return cached;
       return fetch(req).then(resp => {
-        const copy = resp.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(req, copy)).catch(() => {});
+        try {
+          const copy = resp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, copy)).catch(() => {});
+        } catch (e) { /* ignore */ }
         return resp;
-      }).catch(() => cached);
+      }).catch(async () => {
+        // As a last resort, try offline page for same-origin document requests
+        const accept = req.headers.get('accept') || '';
+        if (accept.includes('text/html')) {
+          const offline = await caches.match(OFFLINE_URL);
+          if (offline) return offline;
+        }
+        // Ensure a Response is always returned
+        return Response.error();
+      });
     })
   );
 });

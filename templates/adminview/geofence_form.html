@@ -45,7 +45,7 @@
 
 {% if google_maps_api_key %}
 <!-- Google Maps API -->
-<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=drawing,places&v=weekly" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=drawing,places,marker&v=weekly" async defer></script>
 <script>
 (function(){
   const field = document.getElementById('id_coordinates_json');
@@ -55,11 +55,14 @@
   let map, drawingManager, polygon = null, geocoder, searchBox;
 
   function init(){
-    
-    // Check if map container exists
+    // Ensure Google Maps API and container are available
+    if (typeof window.google === 'undefined' || !google.maps) {
+      setTimeout(init, 500);
+      return;
+    }
     const mapContainer = document.getElementById('map');
     if (!mapContainer) {
-      console.error('Map container not found!');
+      console.warn('geofence_form: #map container not found');
       return;
     }
     
@@ -132,12 +135,11 @@
         map.setZoom(15);
       }
       
-      // Add marker for searched location
-      new google.maps.Marker({
+      // Add marker for searched location (Advanced Marker)
+      new google.maps.marker.AdvancedMarkerElement({
         map: map,
         position: place.geometry.location,
-        title: place.name,
-        animation: google.maps.Animation.DROP
+        title: place.name
       });
     });
     
@@ -157,12 +159,11 @@
         map.setCenter(result.geometry.location);
         map.setZoom(15);
         
-        // Add marker for searched location
-        new google.maps.Marker({
+        // Add marker for searched location (Advanced Marker)
+        new google.maps.marker.AdvancedMarkerElement({
           map: map,
           position: result.geometry.location,
-          title: result.formatted_address,
-          animation: google.maps.Animation.DROP
+          title: result.formatted_address
         });
         
         // Clear search input
@@ -188,15 +189,11 @@
           map.setCenter(pos);
           map.setZoom(16);
           
-          // Add marker for current location
-          new google.maps.Marker({
+          // Add marker for current location (Advanced Marker)
+          new google.maps.marker.AdvancedMarkerElement({
             map: map,
             position: pos,
-            title: 'Your Current Location',
-            icon: {
-              url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
-            },
-            animation: google.maps.Animation.DROP
+            title: 'Your Current Location'
           });
           
           // Reverse geocode to get address
@@ -236,23 +233,15 @@
     field.value = JSON.stringify(coords);
   }
   
-  // Initialize map when Google Maps API is loaded
-  if (typeof google !== 'undefined' && google.maps) {
-    console.log('Google Maps API already loaded, initializing...');
-    init();
-  } else {
-    console.log('Waiting for Google Maps API to load...');
-    window.initMap = init;
+  // Robust initialization: wait until API is ready
+  function safeInit(){
+    if (typeof window.google !== 'undefined' && google.maps) {
+      init();
+    } else {
+      setTimeout(safeInit, 500);
+    }
   }
-  
-  // Fallback initialization
-  if (document.readyState !== 'loading') {
-    setTimeout(init, 1000); // Wait a bit for API to load
-  } else {
-    document.addEventListener('DOMContentLoaded', function() {
-      setTimeout(init, 1000); // Wait a bit for API to load
-    });
-  }
+  if (document.readyState !== 'loading') safeInit(); else document.addEventListener('DOMContentLoaded', safeInit);
 })();
 </script>
 {% else %}

@@ -19,6 +19,7 @@
             <th>Staff</th>
             <th>Students</th>
             <th>Geo-fence</th>
+            <th>Status</th>
             <th class="text-end">Actions</th>
           </tr>
         </thead>
@@ -29,10 +30,25 @@
             <td>{{ c.staff.get_full_name|default:c.staff.username }}</td>
             <td>{{ c.students.count }}</td>
             <td>{{ c.geolocation.name }}</td>
+            <td>
+              {% if c.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
             <td class="text-end">
               <a href="{% url 'adminview:class_edit' c.id %}" class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></a>
               <a href="{% url 'adminview:class_enrollment' c.id %}" class="btn btn-sm btn-outline-success"><i class="fas fa-users"></i></a>
               <a href="{% url 'adminview:class_delete' c.id %}" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></a>
+              <form action="{% url 'adminview:class_toggle_active' c.id %}" method="post" class="d-inline">
+                {% csrf_token %}
+                {% if c.is_active %}
+                  <button type="submit" class="btn btn-sm btn-outline-warning" title="Disable class"><i class="fas fa-pause"></i></button>
+                {% else %}
+                  <button type="submit" class="btn btn-sm btn-outline-success" title="Enable class"><i class="fas fa-play"></i></button>
+                {% endif %}
+              </form>
             </td>
           </tr>
           {% endfor %}

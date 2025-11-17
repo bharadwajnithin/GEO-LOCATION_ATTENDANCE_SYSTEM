@@ -443,6 +443,25 @@ def class_delete(request, class_id):
 
 @login_required
 @user_passes_test(is_staff_member)
+@require_http_methods(["POST"])
+def class_toggle_active(request, class_id):
+    """
+    Toggle a class active/inactive. Staff can toggle only their classes; admin can toggle any.
+    """
+    class_instance = get_object_or_404(Class, id=class_id)
+    if request.user.role != 'admin' and class_instance.staff != request.user:
+        messages.error(request, 'You do not have permission to modify this class.')
+        return redirect('adminview:class_list')
+
+    class_instance.is_active = not bool(class_instance.is_active)
+    class_instance.save(update_fields=['is_active'])
+    status = 'enabled' if class_instance.is_active else 'disabled'
+    messages.success(request, f'Class "{class_instance.name}" {status} successfully!')
+    return redirect('adminview:class_list')
+
+
+@login_required
+@user_passes_test(is_staff_member)
 def class_enrollment(request, class_id):
     """
     View for managing student enrollment in classes.
@@ -1074,6 +1093,7 @@ def attendance_analytics_api(request):
             total_expected += expected
             total_present += present
 
+        # Marks-based totals (existing behavior)
         totals = {
             'enrolled': sum(
                 cls.students.filter(role='student').count() for cls in target_classes
@@ -1082,6 +1102,34 @@ def attendance_analytics_api(request):
             'present': total_present,
             'absent': max(0, total_expected - total_present),
             'percentage': round((total_present / total_expected * 100) if total_expected else 0, 2)
+        }
+
+        # Headcount totals across selected range (unique students present at least once)
+        enrolled_headcount = 0
+        present_headcount = 0
+        for cls in target_classes:
+            try:
+                student_ids = list(cls.students.filter(role='student').values_list('id', flat=True))
+            except Exception:
+                student_ids = []
+            enrolled_headcount += len(student_ids)
+            # students present at least once in range for this class
+            present_once = 0
+            for sid in student_ids:
+                seen = False
+                for d in day_list:
+                    if present_map.get((cls.id, sid, d), False):
+                        seen = True
+                        break
+                if seen:
+                    present_once += 1
+            present_headcount += present_once
+        totals_headcount = {
+            'enrolled': enrolled_headcount,
+            'expected': enrolled_headcount,  # for headcount, expected equals enrolled
+            'present': present_headcount,
+            'absent': max(0, enrolled_headcount - present_headcount),
+            'percentage': round((present_headcount / enrolled_headcount * 100) if enrolled_headcount else 0, 2)
         }
 
         # Trend with granularity grouping
@@ -1152,7 +1200,9 @@ def attendance_analytics_api(request):
             return resp
 
         payload = {
-            'totals': totals,
+            'totals': totals,  # marks totals retained for backward compatibility
+            'totals_marks': totals,
+            'totals_headcount': totals_headcount,
             'trend': trend,
             'classes': classes_payload,
         }
@@ -1506,6 +1556,10 @@ def attendance_analytics_metrics(request):
     elif end_date and not start_date:
         start_date = end_date
 
+    # Clamp excessive ranges (max 90 days)
+    if start_date and end_date and (end_date - start_date).days > 90:
+        start_date = end_date - timedelta(days=90)
+
     # Build day list
     day_list = []
     if start_date and end_date and start_date <= end_date:
@@ -1521,22 +1575,41 @@ def attendance_analytics_metrics(request):
         enrolled_ids = []
     enrolled = len(enrolled_ids)
 
+    # Cache key & lookup with per-(class,day) stamp for invalidation
+    stamp_vals = []
+    if start_date and end_date:
+        cur = start_date
+        while cur <= end_date:
+            stamp_key = f"analytics:stamp:{class_id}:{cur}"
+            stamp_vals.append(str(cache.get(stamp_key, 0)))
+            cur += timedelta(days=1)
+    stamp_str = ":".join(stamp_vals)
+    cache_key = f"analytics:metrics:v1:{request.user.role}:{request.user.id}:{class_id}:{start_date}:{end_date}:{stamp_str}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return JsonResponse(cached)
+
     # Attendance within range
     present_map = {}
     present = 0
     if day_list:
+        # Prefer session_day date filter (indexed), fallback to timestamp range for legacy rows
         day_start, _ = _day_bounds(day_list[0])
         _, day_end = _day_bounds(day_list[-1])
         qs = Attendance.objects.filter(
-            class_instance=selected_class,
-            timestamp__gte=day_start,
-            timestamp__lt=day_end,
-        ).values('student_id', 'timestamp', 'is_present')
+            class_instance=selected_class
+        ).filter(
+            Q(session_day__gte=start_date, session_day__lte=end_date) |
+            Q(session_day__isnull=True, timestamp__gte=day_start, timestamp__lt=day_end)
+        ).values('student_id', 'timestamp', 'session_day', 'is_present')
         for r in qs:
-            try:
-                day_key = timezone.localtime(r['timestamp']).date()
-            except Exception:
-                day_key = r['timestamp'].date()
+            # Derive day key from session_day if present; otherwise from timestamp
+            day_key = r.get('session_day')
+            if not day_key:
+                try:
+                    day_key = timezone.localtime(r['timestamp']).date()
+                except Exception:
+                    day_key = r['timestamp'].date()
             key = (r['student_id'], day_key)
             if r['is_present']:
                 present_map[key] = True
@@ -1566,13 +1639,15 @@ def attendance_analytics_metrics(request):
     else:
         trend = []
 
-    return JsonResponse({
+    payload = {
         'enrolled': enrolled,
         'present': present,
         'absent': absent,
         'percentage': percentage,
         'trend': trend,
-    })
+    }
+    cache.set(cache_key, payload, timeout=60 if end_date >= today else 120)
+    return JsonResponse(payload)
 
 
 @login_required

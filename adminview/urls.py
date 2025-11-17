@@ -20,6 +20,7 @@ urlpatterns = [
     path('classes/<int:class_id>/delete/', views.class_delete, name='class_delete'),
     path('classes/<int:class_id>/enrollment/', views.class_enrollment, name='class_enrollment'),
     path('classes/<int:class_id>/remove-student/<int:student_id>/', views.remove_student_from_class, name='remove_student_from_class'),
+    path('classes/<int:class_id>/toggle/', views.class_toggle_active, name='class_toggle_active'),
     
     # Geo-fence management
     path('geofences/', views.geofence_list, name='geofence_list'),

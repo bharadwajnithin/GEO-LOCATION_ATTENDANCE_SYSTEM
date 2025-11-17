@@ -4,6 +4,7 @@ Models for the userview app.
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
 
 
 class User(AbstractUser):
@@ -117,6 +118,7 @@ class Class(models.Model):
     staff = models.ForeignKey(User, on_delete=models.CASCADE, related_name='classes_taught')
     geolocation = models.ForeignKey(GeoFence, on_delete=models.SET_NULL, null=True, blank=True, related_name='classes')
     students = models.ManyToManyField(User, related_name='classes_enrolled', blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -144,6 +146,8 @@ class Attendance(models.Model):
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='attendance_records')
     class_instance = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='attendance_records')
     timestamp = models.DateTimeField(auto_now_add=True)
+    # Denormalized day of the session for fast date-based grouping and unique constraints
+    session_day = models.DateField(db_index=True, null=True, blank=True)
     is_present = models.BooleanField(default=False)
     geolocation = models.ForeignKey(GeoFence, on_delete=models.SET_NULL, null=True, blank=True, related_name='attendance_records')
     face_verified = models.BooleanField(default=False)
@@ -153,8 +157,12 @@ class Attendance(models.Model):
         db_table = 'userview_attendance'
         verbose_name = 'Attendance'
         verbose_name_plural = 'Attendance Records'
-        unique_together = ['student', 'class_instance', 'timestamp']
         ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['class_instance', 'session_day'], name='att_cls_day_idx'),
+            models.Index(fields=['student', 'session_day'], name='att_std_day_idx'),
+            models.Index(fields=['class_instance', 'student', 'session_day'], name='att_cls_std_day_idx'),
+        ]
     
     def __str__(self):
         try:
@@ -168,3 +176,13 @@ class Attendance(models.Model):
         left = student_username or 'UnknownStudent'
         mid = class_name or 'UnknownClass'
         return f"{left} - {mid} - {self.timestamp.date()}"
+
+    def save(self, *args, **kwargs):
+        """Ensure session_day is always set from timestamp in localtime."""
+        # Compute session_day if missing or timestamp changed
+        ts = self.timestamp or timezone.now()
+        # Use local date to align with views logic
+        local_ts = timezone.localtime(ts) if timezone.is_aware(ts) else ts
+        if not self.session_day:
+            self.session_day = local_ts.date()
+        super().save(*args, **kwargs)
