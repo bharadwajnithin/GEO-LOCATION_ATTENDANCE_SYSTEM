@@ -12,32 +12,7 @@
       <div class="col-lg-3 col-12">{{ form.student.label_tag }} {{ form.student }}</div>
       <div class="col-6 col-lg-2">{{ form.start_date.label_tag }} {{ form.start_date }}</div>
       <div class="col-6 col-lg-2">{{ form.end_date.label_tag }} {{ form.end_date }}</div>
-      <div class="col-lg-2 col-12 d-flex align-items-end gap-2">
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="granularity" id="granDaily" value="daily" checked>
-          <label class="form-check-label" for="granDaily">Daily</label>
-        </div>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="granularity" id="granWeekly" value="weekly">
-          <label class="form-check-label" for="granWeekly">Weekly</label>
-        </div>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="granularity" id="granMonthly" value="monthly">
-          <label class="form-check-label" for="granMonthly">Monthly</label>
-        </div>
-      </div>
-      <div class="col-12 d-flex align-items-end justify-content-between gap-2">
-        <div class="btn-group" role="group" aria-label="Quick range">
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="quick-daily"><i class="far fa-calendar-day me-1"></i>Today</button>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="quick-weekly"><i class="far fa-calendar-week me-1"></i>This Week</button>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="quick-monthly"><i class="far fa-calendar-alt me-1"></i>This Month</button>
-        </div>
-        <div class="btn-group" role="group" aria-label="Metric mode">
-          <input type="radio" class="btn-check" name="metric_mode" id="modeHead" value="headcount" autocomplete="off" checked>
-          <label class="btn btn-outline-primary btn-sm" for="modeHead" title="Unique students over the selected range">Headcount</label>
-          <input type="radio" class="btn-check" name="metric_mode" id="modeMarks" value="marks" autocomplete="off">
-          <label class="btn btn-outline-primary btn-sm" for="modeMarks" title="Attendance marks across all days (Present marks vs Expected marks)">Marks</label>
-        </div>
+      <div class="col-lg-2 col-12 d-flex align-items-end justify-content-end">
         <button id="analytics-filter-btn" class="btn btn-primary" type="submit">
           <span id="analytics-filter-spinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
           <i class="fas fa-filter me-1"></i>Apply Filters
@@ -47,6 +22,48 @@
         <small id="date-error" class="text-danger d-none" role="alert">Start date must be on or before End date.</small>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Daily Overview: primary view -->
+<div class="card mb-3" aria-describedby="daily-overview-help">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <strong>Daily Overview</strong>
+    <div class="d-flex align-items-center gap-2">
+      <label for="daily-date" class="form-label mb-0">Date</label>
+      <input type="date" id="daily-date" class="form-control form-control-sm" style="width: 180px;" />
+      <button id="daily-refresh" class="btn btn-sm btn-primary" type="button"><i class="fas fa-sync me-1"></i>Refresh</button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div id="daily-overview-help" class="visually-hidden">Daily Present vs Absent pie chart with counts and percentages, and accessible lists below.</div>
+    <div class="row g-3 align-items-start">
+      <div class="col-lg-4 col-12">
+        <canvas id="dailyPie" aria-label="Daily Present vs Absent pie" role="img"></canvas>
+        <div id="daily-empty" class="mt-2 small text-muted d-none">No enrolled students or no data for the selected day.</div>
+        <div class="mt-2 small text-muted">Click a pie segment to focus the corresponding list. Legend labels include counts and percentages.</div>
+      </div>
+      <div class="col-lg-8 col-12">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="h6 mb-0">Present <span class="badge bg-success" id="daily-present-count">0</span></div>
+          <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-outline-secondary" id="daily-export-csv" type="button"><i class="fas fa-file-csv me-1"></i>Export CSV</button>
+            <button class="btn btn-outline-secondary" id="daily-copy" type="button"><i class="fas fa-copy me-1"></i>Copy</button>
+          </div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="list-group small" id="present-list" style="max-height: 360px; overflow:auto;" aria-label="Present students list"></div>
+          </div>
+          <div class="col-md-6">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="h6 mb-0">Absent <span class="badge bg-danger" id="daily-absent-count">0</span></div>
+            </div>
+            <div class="list-group small" id="absent-list" style="max-height: 360px; overflow:auto;" aria-label="Absent students list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -96,19 +113,38 @@
   </div>
 </div>
 
-<div class="card mb-3">
-  <div class="card-header"><strong>Present vs Absent</strong></div>
-  <div class="card-body">
-    <div class="row align-items-center">
-      <div class="col-md-6">
-        <canvas id="attendancePie" aria-label="Present vs Absent pie" role="img"></canvas>
-      </div>
-      <div class="col-md-6">
-        <canvas id="attendanceBar" aria-label="Present vs Absent bars" role="img"></canvas>
-      </div>
+ 
+
+<!-- Per-Student Information (inline) -->
+<div class="card mb-3" aria-describedby="student-inline-help">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Per-Student Information</strong>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Student history period">
+      <button class="btn btn-outline-primary" data-sp-days="7">7d</button>
+      <button class="btn btn-outline-primary" data-sp-days="15">15d</button>
+      <button class="btn btn-outline-primary active" data-sp-days="30">30d</button>
+      <button class="btn btn-outline-primary" data-sp-days="60">60d</button>
     </div>
   </div>
-</div>
+  <div class="card-body">
+    <div id="student-inline-help" class="visually-hidden">Shows selected student's attendance summary and a compact timeline.</div>
+    <div id="sp-inline-empty" class="text-muted">Select a student (from the filters or the lists) to view details.</div>
+    <div id="sp-inline" class="d-none">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+          <div class="fw-semibold" id="sp-inline-name">-</div>
+          <div class="text-muted small" id="sp-inline-roll">-</div>
+        </div>
+        <div class="text-end small">
+          <span class="me-3"><span class="text-success" id="sp-inline-pres">0</span> Present</span>
+          <span class="me-3"><span class="text-danger" id="sp-inline-abs">0</span> Absent</span>
+          <span><span id="sp-inline-total">0</span> Days</span>
+        </div>
+      </div>
+      <canvas id="sp-inline-chart" height="110" aria-label="Student mini timeline" role="img"></canvas>
+    </div>
+  </div>
+ </div>
 
 {% if date_range %}
 <div class="alert alert-light py-2 mb-3 border">
@@ -124,47 +160,6 @@
   </div>
 {% endif %}
 
-<div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <strong>Class-wise Breakdown</strong>
-    <button id="export-class-csv" class="btn btn-sm btn-outline-secondary" type="button">
-      <i class="fas fa-file-csv me-1"></i>Export CSV
-    </button>
-  </div>
-  <div class="card-body">
-    {% if class_breakdown_rows %}
-    <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle" id="class-breakdown-table">
-        <thead>
-          <tr>
-            <th>Class</th>
-            <th>Present</th>
-            <th>Absent</th>
-            <th>Expected</th>
-            <th>%</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in class_breakdown_rows %}
-          <tr data-class-id="{{ row.id }}" class="select-class-row" style="cursor:pointer;">
-            <td>
-              <button type="button" class="btn btn-link p-0 select-class-btn" data-class-id="{{ row.id }}">{{ row.name }}</button>
-            </td>
-            <td>{{ row.present }}</td>
-            <td>{{ row.absent }}</td>
-            <td>{{ row.expected }}</td>
-            <td>{{ row.percentage }}%</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <small class="text-muted">Tip: Click a class name or row to view its charts above.</small>
-    {% else %}
-    <div class="text-muted">No data available for current filters.</div>
-    {% endif %}
-  </div>
-  </div>
 
 {% if student_breakdown %}
 <div class="card mb-3">
@@ -203,43 +198,6 @@
   </div>
 {% endif %}
 
-<div class="card">
-  <div class="card-header"><strong>Records</strong></div>
-  <div class="card-body">
-    {% if attendance_records %}
-    <div class="table-responsive">
-      <table class="table table-hover table-sm align-middle">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Student</th>
-            <th>Class</th>
-            <th>Present</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in attendance_records %}
-          <tr>
-            <td>{{ r.timestamp|date:'Y-m-d H:i' }}</td>
-            <td>{{ r.student.get_full_name|default:r.student.username }}</td>
-            <td>{{ r.class_instance.name }}</td>
-            <td>
-              {% if r.is_present %}
-                <span class="badge bg-success">Yes</span>
-              {% else %}
-                <span class="badge bg-danger">No</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div class="text-muted">No attendance records to display.</div>
-    {% endif %}
-  </div>
-</div>
 <!-- Drilldown Modal -->
 <div class="modal fade" id="drilldownModal" tabindex="-1" aria-labelledby="drilldownLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -292,6 +250,7 @@
 {{ trend_data|json_script:"trend-data" }}
 {% endif %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <script>
 // Helpers for filters and URLs
 (function(){
@@ -300,6 +259,8 @@
   const spinner = document.getElementById('analytics-filter-spinner');
   const apiBase = '{% url "adminview:attendance_analytics_api" %}';
   const drillApi = '{% url "adminview:attendance_analytics_drilldown" %}';
+  const dailyApi = '{% url "adminview:attendance_daily_summary" %}';
+  const studentHistoryApi = '{% url "adminview:attendance_student_history" %}';
   const startInput = document.querySelector('input[name="start_date"]');
   const endInput = document.querySelector('input[name="end_date"]');
   const dateError = document.getElementById('date-error');
@@ -309,6 +270,215 @@
     if (btn) btn.disabled = on;
     if (spinner) spinner.classList.toggle('d-none', !on);
   }
+
+  // ------- Daily Overview (primary view) -------
+  async function fetchDaily(){
+    const classSel = document.querySelector('select[name="class_instance"]');
+    const cls = classSel && classSel.value ? classSel.value : '';
+    const dateInput = document.getElementById('daily-date');
+    const day = dateInput && dateInput.value ? dateInput.value : (new Date()).toISOString().slice(0,10);
+    if (!cls) {
+      // Clear UI when no class
+      renderDaily({present:[], absent:[], counts:{present:0, absent:0, total:0}});
+      return;
+    }
+    try{
+      const url = new URL(dailyApi, window.location.origin);
+      url.searchParams.set('class_id', cls);
+      url.searchParams.set('date', day);
+      const res = await fetch(url.toString(), { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error||'Daily fetch failed');
+      renderDaily(data);
+    }catch(e){ renderDaily({present:[], absent:[], counts:{present:0, absent:0, total:0}}); }
+  }
+
+  function renderDaily(data){
+    // lists
+    const presentEl = document.getElementById('present-list');
+    const absentEl = document.getElementById('absent-list');
+    const pc = document.getElementById('daily-present-count');
+    const ac = document.getElementById('daily-absent-count');
+    const present = Array.isArray(data.present)?data.present:[];
+    const absent = Array.isArray(data.absent)?data.absent:[];
+    if (pc) pc.textContent = String(present.length);
+    if (ac) ac.textContent = String(absent.length);
+    function rowHtml(s){
+      const avatar = s.name?.charAt(0)?.toUpperCase() || '?';
+      const time = s.check_in_time ? `<span class="badge bg-light text-dark ms-2"><i class=\"far fa-clock me-1\"></i>${s.check_in_time}</span>` : '';
+      return `<button type="button" class="list-group-item list-group-item-action d-flex align-items-center" data-student-id="${s.id}">
+        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center me-2" style="width:28px;height:28px;">${avatar}</div>
+        <div class="flex-grow-1">
+          <div class="fw-semibold">${s.name}</div>
+          <div class="text-muted small">ID: ${s.roll||''}</div>
+        </div>
+        ${time}
+      </button>`;
+    }
+    if (presentEl) presentEl.innerHTML = present.map(rowHtml).join('') || '<div class="text-muted">No present students</div>';
+    if (absentEl) absentEl.innerHTML = absent.map(rowHtml).join('') || '<div class="text-muted">No absent students</div>';
+
+    // chart
+    const el = document.getElementById('dailyPie');
+    const emptyEl = document.getElementById('daily-empty');
+    const total = (data.counts?.total)|| (present.length+absent.length);
+    const p = present.length;
+    const a = absent.length;
+    if (el){
+      try{ if (chartDaily) { chartDaily.destroy(); } }catch(_){}
+      const labels = ['Present','Absent'];
+      const colors = ['#28a745','#dc3545'];
+      // Toggle empty message visibility
+      if (emptyEl) emptyEl.classList.toggle('d-none', !!total);
+      // Build plugins array (datalabels optional)
+      const plugins = [];
+      if (window.ChartDataLabels) { plugins.push(ChartDataLabels); }
+      chartDaily = new Chart(el.getContext('2d'), {
+        type: 'pie',
+        data: { labels, datasets: [{ data: [p, a], backgroundColor: colors }]},
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom', labels: { generateLabels(chart){
+              const ds = chart.data.datasets[0];
+              return chart.data.labels.map((l,i)=>{
+                const val = ds.data[i]||0; const pct = total? Math.round(val*100/total):0;
+                return { text: `${l} — ${val} (${pct}%)`, fillStyle: ds.backgroundColor[i], index: i };
+              });
+            }}},
+            tooltip: { callbacks: { label: (ctx)=>{
+              const val = ctx.parsed||0; const pct = total? Math.round(val*100/total):0; return `${ctx.label} — ${val} (${pct}%)`;
+            } } },
+            // Only configure datalabels if plugin is present
+            ...(window.ChartDataLabels ? { datalabels: { color: '#fff', font: { weight: 'bold' }, formatter: (val)=>{ const pct = total? Math.round(val*100/total):0; return `${val}\n${pct}%`; } } } : {})
+          }
+        },
+        plugins: plugins
+      });
+      // click to focus list
+      el.onclick = (evt)=>{
+        const points = chartDaily.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+        if (!points || !points.length) return;
+        const idx = points[0].index;
+        const target = idx===0 ? document.getElementById('present-list') : document.getElementById('absent-list');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+    }
+
+    // click row -> open student panel
+    document.querySelectorAll('#present-list .list-group-item, #absent-list .list-group-item').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const sid = el.getAttribute('data-student-id');
+        openStudentPanel(sid);
+        loadStudentInline(sid, getInlineDays());
+      });
+    });
+  }
+
+  // Export helpers for daily lists
+  function exportDailyCsv(){
+    const rows = [];
+    const day = document.getElementById('daily-date')?.value || '';
+    function extract(listId, status){
+      document.querySelectorAll(`#${listId} .list-group-item`).forEach(el=>{
+        const name = el.querySelector('.fw-semibold')?.textContent?.trim()||'';
+        const idText = el.querySelector('.text-muted.small')?.textContent?.replace('ID:','').trim()||'';
+        const time = el.querySelector('.badge.bg-light')?.textContent?.trim()||'';
+        rows.push([day, status, name, idText, time]);
+      });
+    }
+    extract('present-list','Present');
+    extract('absent-list','Absent');
+    const csv = ['Date,Status,Name,Roll/ID,Check-in Time'].concat(rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(','))).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'attendance_daily.csv'; a.click();
+  }
+  function copyDaily(){
+    const lines = [];
+    function collect(listId, status){
+      document.querySelectorAll(`#${listId} .list-group-item`).forEach(el=>{
+        const name = el.querySelector('.fw-semibold')?.textContent?.trim()||'';
+        const idText = el.querySelector('.text-muted.small')?.textContent?.replace('ID:','').trim()||'';
+        const time = el.querySelector('.badge.bg-light')?.textContent?.trim()||'';
+        lines.push(`${status}\t${name}\t${idText}\t${time}`);
+      });
+    }
+    collect('present-list','Present');
+    collect('absent-list','Absent');
+    navigator.clipboard?.writeText(lines.join('\n'));
+  }
+
+  document.getElementById('daily-export-csv')?.addEventListener('click', exportDailyCsv);
+  document.getElementById('daily-copy')?.addEventListener('click', copyDaily);
+  document.getElementById('daily-refresh')?.addEventListener('click', fetchDaily);
+  // initialize daily date = today
+  (function(){ const d = new Date(); const s = d.toISOString().slice(0,10); const el = document.getElementById('daily-date'); if (el && !el.value) el.value = s; })();
+  // change of class/date triggers daily
+  document.querySelector('select[name="class_instance"]')?.addEventListener('change', fetchDaily);
+  document.getElementById('daily-date')?.addEventListener('change', fetchDaily);
+
+  // ---------- Inline Per-Student Information ----------
+  let spInlineChart = null;
+  function getInlineDays(){
+    const active = document.querySelector('[data-sp-days].active');
+    const d = active ? parseInt(active.getAttribute('data-sp-days'),10) : 30;
+    return (d===7||d===15||d===30||d===60) ? d : 30;
+  }
+  async function loadStudentInline(studentId, days){
+    const empty = document.getElementById('sp-inline-empty');
+    const wrap = document.getElementById('sp-inline');
+    if (!studentId){ if (wrap) wrap.classList.add('d-none'); if (empty) empty.classList.remove('d-none'); return; }
+    try{
+      const classSel = document.querySelector('select[name="class_instance"]');
+      const cls = classSel && classSel.value ? classSel.value : '';
+      const url = new URL(studentHistoryApi, window.location.origin);
+      url.searchParams.set('student_id', studentId);
+      if (cls) url.searchParams.set('class_id', cls);
+      url.searchParams.set('days', String(days||30));
+      const res = await fetch(url.toString(), { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error||'Failed');
+      // populate
+      document.getElementById('sp-inline-name').textContent = data.student?.name || '-';
+      document.getElementById('sp-inline-roll').textContent = data.student?.roll || '-';
+      document.getElementById('sp-inline-pres').textContent = data.counts?.present || 0;
+      document.getElementById('sp-inline-abs').textContent = data.counts?.absent || 0;
+      document.getElementById('sp-inline-total').textContent = data.counts?.total_days || 0;
+      if (empty) empty.classList.add('d-none');
+      if (wrap) wrap.classList.remove('d-none');
+      const el = document.getElementById('sp-inline-chart');
+      if (spInlineChart) { try{ spInlineChart.destroy(); }catch(_){} }
+      spInlineChart = new Chart(el.getContext('2d'), {
+        type: 'bar',
+        data: { labels: (data.series||[]).map(x=>x.date), datasets: [{ label: 'Present', data: (data.series||[]).map(x=>x.present), backgroundColor: (ctx)=> (ctx.raw? '#28a745':'#dc3545') }]},
+        options: { responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx)=> (ctx.raw? 'Present':'Absent') } } }, scales: { y: { display: false, suggestedMin: 0, suggestedMax: 1 } } }
+      });
+    }catch(e){ /* noop */ }
+  }
+  // Hook student select
+  (function(){
+    const sel = document.querySelector('select[name="student"]');
+    if (!sel) return;
+    sel.addEventListener('change', ()=>{
+      const sid = sel.value || '';
+      if (sid) { loadStudentInline(sid, getInlineDays()); }
+      else {
+        const empty = document.getElementById('sp-inline-empty');
+        const wrap = document.getElementById('sp-inline');
+        if (wrap) wrap.classList.add('d-none'); if (empty) empty.classList.remove('d-none');
+      }
+    });
+  })();
+  // Hook inline period buttons
+  (function(){
+    document.querySelectorAll('[data-sp-days]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        btn.parentElement?.querySelectorAll('[data-sp-days]').forEach(b=> b.classList.toggle('active', b===btn));
+        const sid = document.querySelector('select[name="student"]')?.value;
+        if (sid) loadStudentInline(sid, getInlineDays());
+      });
+    });
+  })();
 
   function validateDates(){
     const s = startInput?.value;
@@ -353,11 +523,17 @@
   let chartPie = window._chartPie;
   let chartBar = window._chartBar;
   let chartTrend = window._chartTrend;
+  let chartDaily = window._chartDaily;
+  let chartSummaryPie = window._chartSummaryPie;
+  let chartSummaryDoughnut = window._chartSummaryDoughnut;
 
   function destroyCharts(){
     try{ if (chartPie) { chartPie.destroy(); chartPie = null; } } catch(e){}
     try{ if (chartBar) { chartBar.destroy(); chartBar = null; } } catch(e){}
     try{ if (chartTrend) { chartTrend.destroy(); chartTrend = null; } } catch(e){}
+    try{ if (chartDaily) { chartDaily.destroy(); chartDaily = null; } } catch(e){}
+    try{ if (chartSummaryPie) { chartSummaryPie.destroy(); chartSummaryPie = null; } } catch(e){}
+    try{ if (chartSummaryDoughnut) { chartSummaryDoughnut.destroy(); chartSummaryDoughnut = null; } } catch(e){}
   }
 
   function getMode(){
@@ -382,6 +558,8 @@
     const pieEl = document.getElementById('attendancePie');
     const barEl = document.getElementById('attendanceBar');
     const trendEl = document.getElementById('attendanceTrend');
+    const summaryPieEl = document.getElementById('summaryPie');
+    const summaryDoughnutEl = document.getElementById('summaryDoughnut');
     const totals = pickTotals(payload);
     const present = totals?.present ?? 0;
     const absent = totals?.absent ?? 0;
@@ -414,6 +592,42 @@
         type: 'line',
         data: { labels: t.map(x=>x.date), datasets: [{ label: 'Present', data: t.map(x=>x.present), borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.15)', fill: true, tension: .35 }]},
         options: { responsive: true, plugins: { legend: { position: 'bottom' }}, scales: { y: { beginAtZero: true }}}
+      });
+    }
+
+    // New summary Pie and Doughnut
+    const total = (present + absent) || 0;
+    const plugins = [];
+    if (window.ChartDataLabels) plugins.push(ChartDataLabels);
+    if (summaryPieEl){
+      chartSummaryPie = new Chart(summaryPieEl.getContext('2d'), {
+        type: 'pie',
+        data: { labels, datasets: [{ data: [present, absent], backgroundColor: colors }]},
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: { callbacks: { label: (ctx)=>{ const val=ctx.parsed||0; const pct= total? Math.round(val*100/total):0; return `${ctx.label} — ${val} (${pct}%)`; } } },
+            ...(window.ChartDataLabels ? { datalabels: { color:'#fff', font:{weight:'bold'}, formatter:(val)=>{ const pct= total? Math.round(val*100/total):0; return `${val}\n${pct}%`; } } } : {})
+          }
+        },
+        plugins
+      });
+    }
+    if (summaryDoughnutEl){
+      chartSummaryDoughnut = new Chart(summaryDoughnutEl.getContext('2d'), {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data: [present, absent], backgroundColor: colors, borderWidth: 2 }]},
+        options: {
+          cutout: '55%',
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: { callbacks: { label: (ctx)=>{ const val=ctx.parsed||0; const pct= total? Math.round(val*100/total):0; return `${ctx.label} — ${val} (${pct}%)`; } } },
+            ...(window.ChartDataLabels ? { datalabels: { color:'#000', font:{weight:'bold'}, formatter:(val)=>{ const pct= total? Math.round(val*100/total):0; return `${pct}%`; } } } : {})
+          }
+        },
+        plugins
       });
     }
   }
@@ -547,6 +761,7 @@
   // Initial fetch to sync dynamic charts/cards with server
   validateDates();
   fetchAnalytics();
+  fetchDaily();
 })();
   // Drilldown search debounce
   (function(){

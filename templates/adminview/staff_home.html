@@ -203,68 +203,7 @@
     </div>
 </div>
 
-<!-- Recent Attendance -->
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-clock me-2"></i>Recent Attendance
-                </h5>
-            </div>
-            <div class="card-body">
-                {% if recent_attendance %}
-                    <div class="table-responsive">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Student</th>
-                                    <th>Class</th>
-                                    <th>Time</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for record in recent_attendance %}
-                                <tr>
-                                    <td>
-                                        <strong>{{ record.student.get_full_name }}</strong>
-                                        <br>
-                                        <small class="text-muted">@{{ record.student.username }}</small>
-                                    </td>
-                                    <td>{{ record.class_instance.name }}</td>
-                                    <td>
-                                        <small>{{ record.timestamp|date:"M d, Y" }}</small>
-                                        <br>
-                                        <small class="text-muted">{{ record.timestamp|time:"H:i" }}</small>
-                                    </td>
-                                    <td>
-                                        {% if record.is_present %}
-                                            <span class="badge bg-success">
-                                                <i class="fas fa-check me-1"></i>Present
-                                            </span>
-                                        {% else %}
-                                            <span class="badge bg-danger">
-                                                <i class="fas fa-times me-1"></i>Absent
-                                            </span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <div class="text-center py-4">
-                        <i class="fas fa-clock fa-3x text-muted mb-3"></i>
-                        <h5 class="text-muted">No Recent Attendance</h5>
-                        <p class="text-muted">No attendance records found for your classes.</p>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
+{% comment %} Recent Attendance section removed as per requirement {% endcomment %}
 {% endblock %}
 
 {% block extra_js %}
@@ -276,7 +215,7 @@
 <script>
 // Staff map functionality for displaying class geo-fences with polygon drawing
 (function(){
-  const data = {{ class_geofences_json|default:'[]'|safe }};
+  const data = JSON.parse('{{ class_geofences_json|default:"[]"|escapejs }}');
   let map, drawingManager, currentPolygon = null;
   
   function init(){

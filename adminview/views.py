@@ -58,11 +58,6 @@ def staff_home(request):
     else:
         classes = Class.objects.filter(staff=request.user)
     
-    # Get recent attendance records
-    recent_attendance = Attendance.objects.filter(
-        class_instance__in=classes
-    ).select_related('student', 'class_instance').order_by('-timestamp')[:10]
-    
     # Get attendance statistics
     total_students = sum(cls.students.count() for cls in classes)
     today = timezone.now().date()
@@ -94,7 +89,6 @@ def staff_home(request):
 
     context = {
         'classes': classes,
-        'recent_attendance': recent_attendance,
         'total_students': total_students,
         'today_attendance': today_attendance,
         'google_maps_api_key': getattr(settings, 'GOOGLE_MAPS_API_KEY', None),
@@ -1647,6 +1641,201 @@ def attendance_analytics_metrics(request):
         'trend': trend,
     }
     cache.set(cache_key, payload, timeout=60 if end_date >= today else 120)
+    return JsonResponse(payload)
+
+
+@login_required
+@user_passes_test(is_staff_member)
+def attendance_daily_summary(request):
+    """
+    Return daily present/absent lists for a class and date.
+    GET: class_id (required), date (YYYY-MM-DD, default today)
+    Response: {
+      present: [{id,name,roll,check_in_time}],
+      absent: [{id,name,roll}],
+      counts: {present, absent, total}
+    }
+    """
+    def _parse_int(v):
+        try:
+            return int(v)
+        except Exception:
+            return None
+    def _parse_date(s):
+        try:
+            return datetime.strptime(s, '%Y-%m-%d').date()
+        except Exception:
+            return None
+    class_id = _parse_int(request.GET.get('class_id'))
+    if not class_id:
+        return JsonResponse({'error': 'class_id is required'}, status=400)
+
+    # Authorization: restrict to classes visible to user
+    if request.user.role == 'admin':
+        visible_ids = set(Class.objects.values_list('id', flat=True))
+    else:
+        visible_ids = set(Class.objects.filter(staff=request.user).values_list('id', flat=True))
+    if class_id not in visible_ids:
+        return JsonResponse({'error': 'Class not found or not permitted'}, status=404)
+
+    target_date = _parse_date(request.GET.get('date', '')) or timezone.now().date()
+    day_start, day_end = _day_bounds(target_date)
+
+    # Enrolled students
+    try:
+        enrolled = list(User.objects.filter(
+            role='student', classes_enrolled__id=class_id
+        ).only('id', 'first_name', 'last_name', 'username', 'department_id').distinct())
+    except Exception:
+        enrolled = []
+    enrolled_ids = [s.id for s in enrolled]
+
+    # Attendance rows for that day
+    rows = list(
+        Attendance.objects.filter(
+            class_instance_id=class_id
+        ).filter(
+            Q(session_day=target_date) |
+            Q(session_day__isnull=True, timestamp__gte=day_start, timestamp__lt=day_end)
+        ).select_related('student').only('student_id', 'timestamp', 'is_present')
+    )
+
+    # Determine first check-in per student and presence
+    first_checkin = {}
+    present_ids = set()
+    for r in rows:
+        if r.is_present:
+            present_ids.add(r.student_id)
+            ts = r.timestamp
+            prev = first_checkin.get(r.student_id)
+            if not prev or ts < prev:
+                first_checkin[r.student_id] = ts
+
+    def _name(u):
+        try:
+            n = (u.first_name or '').strip() + ' ' + (u.last_name or '').strip()
+            return n.strip() or u.username
+        except Exception:
+            return getattr(u, 'username', str(getattr(u, 'id', '')))
+
+    present_list = []
+    absent_list = []
+    for u in enrolled:
+        item = {
+            'id': u.id,
+            'name': _name(u),
+            'roll': getattr(u, 'department_id', '') or '',
+        }
+        if u.id in present_ids:
+            ts = first_checkin.get(u.id)
+            item['check_in_time'] = timezone.localtime(ts).strftime('%H:%M') if ts else None
+            present_list.append(item)
+        else:
+            absent_list.append(item)
+
+    present_list.sort(key=lambda x: (x.get('check_in_time') or '99:99', x['name'].lower()))
+    absent_list.sort(key=lambda x: x['name'].lower())
+
+    payload = {
+        'present': present_list,
+        'absent': absent_list,
+        'counts': {
+            'present': len(present_list),
+            'absent': len(absent_list),
+            'total': len(enrolled_ids),
+        }
+    }
+    return JsonResponse(payload)
+
+
+@login_required
+@user_passes_test(is_staff_member)
+def attendance_student_history(request):
+    """
+    Return per-student presence over last N days with counts and timeline.
+    GET: student_id (required), class_id (optional to restrict to a class), days (7/15/30/60; default 30)
+    Response: { counts: {present, absent, total_days}, series: [{date, present}], student: {id,name,roll} }
+    """
+    def _parse_int(v):
+        try:
+            return int(v)
+        except Exception:
+            return None
+    student_id = _parse_int(request.GET.get('student_id'))
+    if not student_id:
+        return JsonResponse({'error': 'student_id is required'}, status=400)
+    class_id = _parse_int(request.GET.get('class_id'))
+    days = _parse_int(request.GET.get('days')) or 30
+    days = days if days in (7, 15, 30, 60) else 30
+
+    # Fetch student and authorize
+    try:
+        student = User.objects.get(id=student_id, role='student')
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'Student not found'}, status=404)
+
+    if request.user.role == 'admin':
+        visible_classes = set(Class.objects.values_list('id', flat=True))
+    else:
+        visible_classes = set(Class.objects.filter(staff=request.user).values_list('id', flat=True))
+
+    if class_id and class_id not in visible_classes:
+        return JsonResponse({'error': 'Class not found or not permitted'}, status=404)
+
+    # Build date range (inclusive)
+    end_date = timezone.now().date()
+    start_date = end_date - timedelta(days=days-1)
+
+    # Build day list
+    day_list = []
+    d = start_date
+    while d <= end_date:
+        day_list.append(d)
+        d += timedelta(days=1)
+
+    # Query attendance
+    qs = Attendance.objects.filter(student_id=student_id)
+    if class_id:
+        qs = qs.filter(class_instance_id=class_id)
+    day_start, _ = _day_bounds(start_date)
+    _, day_end = _day_bounds(end_date)
+    qs = qs.filter(
+        Q(session_day__gte=start_date, session_day__lte=end_date) |
+        Q(session_day__isnull=True, timestamp__gte=day_start, timestamp__lt=day_end)
+    ).values('timestamp','session_day','is_present')
+
+    present_days = set()
+    for r in qs:
+        dk = r.get('session_day')
+        if not dk:
+            try:
+                dk = timezone.localtime(r['timestamp']).date()
+            except Exception:
+                dk = r['timestamp'].date()
+        if r['is_present']:
+            present_days.add(dk)
+
+    series = []
+    present_count = 0
+    for d in day_list:
+        is_p = d in present_days
+        if is_p:
+            present_count += 1
+        series.append({'date': d.strftime('%Y-%m-%d'), 'present': 1 if is_p else 0})
+
+    payload = {
+        'student': {
+            'id': student.id,
+            'name': (student.get_full_name() or student.username),
+            'roll': getattr(student, 'department_id', '') or '',
+        },
+        'counts': {
+            'present': present_count,
+            'absent': max(0, len(day_list) - present_count),
+            'total_days': len(day_list),
+        },
+        'series': series,
+    }
     return JsonResponse(payload)
 
 

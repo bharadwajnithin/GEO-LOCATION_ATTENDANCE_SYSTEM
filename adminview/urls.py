@@ -41,4 +41,7 @@ urlpatterns = [
     # New consolidated analytics API and drilldown
     path('api/attendance/analytics/', views.attendance_analytics_api, name='attendance_analytics_api'),
     path('api/attendance/analytics/drilldown/', views.attendance_analytics_drilldown, name='attendance_analytics_drilldown'),
+    # Daily summary and student history APIs
+    path('api/attendance/daily/', views.attendance_daily_summary, name='attendance_daily_summary'),
+    path('api/attendance/student-history/', views.attendance_student_history, name='attendance_student_history'),
 ]

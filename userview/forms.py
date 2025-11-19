@@ -3,6 +3,8 @@ Forms for the userview app.
 """
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import PasswordResetForm as DjangoPasswordResetForm
 from .models import User
 import re
 
@@ -14,15 +16,17 @@ class UserRegistrationForm(forms.ModelForm):
     - username (User ID used for login)
     - display_name (stored in first_name)
     - password (used for login)
+    - email (used for password reset)
     """
     role = forms.ChoiceField(choices=User.ROLE_CHOICES, required=True)
     username = forms.CharField(required=True)
     display_name = forms.CharField(required=True, label='User Name')
     password = forms.CharField(required=True, widget=forms.PasswordInput)
+    email = forms.EmailField(required=True)
 
     class Meta:
         model = User
-        fields = ('username', 'role')
+        fields = ('username', 'role', 'email')
 
     def clean_username(self):
         username = (self.cleaned_data.get('username') or '').strip()
@@ -34,12 +38,21 @@ class UserRegistrationForm(forms.ModelForm):
             raise forms.ValidationError('A user with that User ID already exists.')
         return username
 
+    def clean_email(self):
+        email = (self.cleaned_data.get('email') or '').strip().lower()
+        if not email:
+            raise forms.ValidationError('Please enter an email address.')
+        # Optional uniqueness check; comment out if you allow duplicates
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError('A user with that email already exists.')
+        return email
+
     def save(self, commit=True):
         user = super().save(commit=False)
         user.username = self.cleaned_data['username'].strip()
         user.first_name = self.cleaned_data['display_name']
         user.last_name = ''
-        user.email = ''
+        user.email = self.cleaned_data['email']
         user.role = self.cleaned_data['role']
         # set password
         user.set_password(self.cleaned_data['password'])
@@ -65,3 +78,24 @@ class FaceDataForm(forms.Form):
     Deprecated in simplified registration flow. Kept for compatibility but unused.
     """
     pass
+
+
+class PasswordResetForm(DjangoPasswordResetForm):
+    """
+    Custom PasswordResetForm to avoid djongo iLIKE issues by performing
+    case-insensitive email matching in Python after fetching active users.
+    """
+    def get_users(self, email):
+        UserModel = get_user_model()
+        try:
+            email_norm = (email or "").strip().lower()
+            # Fetch only active users to reduce dataset; avoid email__iexact (iLIKE) in djongo
+            active_users = UserModel._default_manager.filter(is_active=True)
+            for user in active_users:
+                try:
+                    if (user.email or "").strip().lower() == email_norm:
+                        yield user
+                except Exception:
+                    continue
+        except Exception:
+            return []
