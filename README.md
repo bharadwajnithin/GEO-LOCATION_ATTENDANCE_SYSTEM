@@ -145,4 +145,4 @@ Specify your license here (e.g., MIT). If not specified, the project is propriet
 - OpenCV, NumPy, Pillow
 - Google Maps JavaScript API
 - Optional: MediaPipe, DeepFace/Facenet, TensorFlow/PyTorch, dlib
-# -GAS-GEO-LOCATION-ATTENDANCE-TRACKING-SYSTEM
+
