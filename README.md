@@ -51,6 +51,8 @@ source venv/bin/activate
 - Minimal runtime:
 ```bash
 pip install -r requirements.txt
+
+or better you do it enhanced_requorements.txt
 ```
 
 - Advanced face/geo stack (optional, heavy deps):
