@@ -9,6 +9,7 @@ app_name = 'userview'
 urlpatterns = [
     path('', views.login_view, name='login'),
     path('register/', views.register_view, name='register'),
+    path('profile/', views.profile_view, name='profile'),
     path('logout/', views.logout_view, name='logout'),
     path('student-home/', views.student_home, name='student_home'),
     path('face-enroll/', views.face_enroll, name='face_enroll'),

@@ -80,6 +80,43 @@ class FaceDataForm(forms.Form):
     pass
 
 
+class ProfileUpdateForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ('first_name', 'email', 'department_id')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['first_name'].label = 'User Name'
+        self.fields['first_name'].required = True
+        self.fields['email'].required = True
+        self.fields['first_name'].widget.attrs.update({'class': 'form-control'})
+        self.fields['email'].widget.attrs.update({'class': 'form-control'})
+        self.fields['department_id'].required = False
+        self.fields['department_id'].widget.attrs.update({'class': 'form-control'})
+
+    def clean_email(self):
+        email = (self.cleaned_data.get('email') or '').strip().lower()
+        if not email:
+            raise forms.ValidationError('Please enter an email address.')
+        try:
+            for u in User.objects.all():
+                try:
+                    if u.pk == self.instance.pk:
+                        continue
+                    if (u.email or '').strip().lower() == email:
+                        raise forms.ValidationError('A user with that email already exists.')
+                except forms.ValidationError:
+                    raise
+                except Exception:
+                    continue
+        except forms.ValidationError:
+            raise
+        except Exception:
+            pass
+        return email
+
+
 class PasswordResetForm(DjangoPasswordResetForm):
     """
     Custom PasswordResetForm to avoid djongo iLIKE issues by performing

@@ -247,10 +247,10 @@
                                     <th>Performance</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="class-attendance-tbody">
                                 {% for class_data in class_attendance %}
                                 <tr>
-                                    <td><strong>{{ class_data.class_name }}</strong></td>
+                                    <td><strong><a href="{% url 'adminview:class_edit' class_data.class_id %}"></a>{{ class_data.class_name }}</a></strong></td>
                                     <td>{{ class_data.present_count }}</td>
                                     <td>{{ class_data.total_count }}</td>
                                     <td>{{ class_data.percentage }}%</td>
@@ -368,22 +368,33 @@
 {% endblock %}
 
 {% block extra_js %}
+{{ daily_attendance|json_script:"daily-attendance-data" }}
+{% if class_attendance %}
+{{ class_attendance|json_script:"class-attendance-data" }}
+{% endif %}
 <script>
 // Daily Attendance Chart
-const dailyCtx = document.getElementById('dailyAttendanceChart').getContext('2d');
-const dailyChart = new Chart(dailyCtx, {
+const __dailyAttendanceRaw = JSON.parse(document.getElementById('daily-attendance-data').textContent);
+const __dailyAttendanceLabels = __dailyAttendanceRaw.map(d => d.date);
+const __dailyAttendancePresent = __dailyAttendanceRaw.map(d => d.present_count);
+const __dailyAttendanceTotal = __dailyAttendanceRaw.map(d => d.total_count);
+let dailyChart;
+const __dailyCanvas = document.getElementById('dailyAttendanceChart');
+if (typeof Chart !== 'undefined' && __dailyCanvas && __dailyCanvas.getContext){
+const dailyCtx = __dailyCanvas.getContext('2d');
+dailyChart = new Chart(dailyCtx, {
     type: 'line',
     data: {
-        labels: [{% for day in daily_attendance %}'{{ day.date }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+        labels: __dailyAttendanceLabels,
         datasets: [{
             label: 'Present Students',
-            data: [{% for day in daily_attendance %}{{ day.present_count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+            data: __dailyAttendancePresent,
             borderColor: 'rgb(75, 192, 192)',
             backgroundColor: 'rgba(75, 192, 192, 0.2)',
             tension: 0.1
         }, {
             label: 'Total Students',
-            data: [{% for day in daily_attendance %}{{ day.total_count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+            data: __dailyAttendanceTotal,
             borderColor: 'rgb(255, 99, 132)',
             backgroundColor: 'rgba(255, 99, 132, 0.2)',
             tension: 0.1
@@ -407,37 +418,64 @@ const dailyChart = new Chart(dailyCtx, {
         }
     }
 });
+}
 
 // Class Attendance Chart
 {% if class_attendance %}
-const classCtx = document.getElementById('classAttendanceChart').getContext('2d');
-const classChart = new Chart(classCtx, {
+let classChart;
+const __classCanvas = document.getElementById('classAttendanceChart');
+const classCtx = (__classCanvas && __classCanvas.getContext) ? __classCanvas.getContext('2d') : null;
+const __classBaseColors = [
+    '75, 192, 192',
+    '54, 162, 235',
+    '255, 206, 86',
+    '255, 99, 132',
+    '153, 102, 255',
+    '255, 159, 64',
+    '201, 203, 207',
+    '99, 255, 132',
+    '132, 99, 255',
+    '235, 162, 54'
+];
+
+function __classColors(count, alpha){
+    return Array.from({length: count}, (_, i) => `rgba(${__classBaseColors[i % __classBaseColors.length]}, ${alpha})`);
+}
+
+const __classAttendanceRaw = JSON.parse(document.getElementById('class-attendance-data').textContent);
+const __classAttendanceLabels = __classAttendanceRaw.map(c => c.class_name);
+const __classAttendancePercentages = __classAttendanceRaw.map(c => c.percentage);
+const __classAttendanceIds = __classAttendanceRaw.map(c => c.class_id);
+const __classEditUrlTemplate = '{% url "adminview:class_edit" 0 %}';
+function __classEditUrl(classId){
+    return __classEditUrlTemplate.replace('/0/edit/', '/' + String(classId) + '/edit/');
+}
+
+if (typeof Chart !== 'undefined' && classCtx){
+classChart = new Chart(classCtx, {
     type: 'bar',
     data: {
-        labels: [{% for class_data in class_attendance %}'{{ class_data.class_name }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+        labels: __classAttendanceLabels,
         datasets: [{
             label: 'Attendance Percentage',
-            data: [{% for class_data in class_attendance %}{{ class_data.percentage }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-            backgroundColor: [
-                'rgba(75, 192, 192, 0.8)',
-                'rgba(54, 162, 235, 0.8)',
-                'rgba(255, 206, 86, 0.8)',
-                'rgba(255, 99, 132, 0.8)',
-                'rgba(153, 102, 255, 0.8)'
-            ],
-            borderColor: [
-                'rgba(75, 192, 192, 1)',
-                'rgba(54, 162, 235, 1)',
-                'rgba(255, 206, 86, 1)',
-                'rgba(255, 99, 132, 1)',
-                'rgba(153, 102, 255, 1)'
-            ],
+            data: __classAttendancePercentages,
+            backgroundColor: __classColors(__classAttendanceLabels.length, 0.8),
+            borderColor: __classColors(__classAttendanceLabels.length, 1),
             borderWidth: 1
         }]
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
+        onClick: function(evt){
+            try{
+                const points = classChart.getElementsAtEventForMode(evt, 'nearest', {intersect: true}, true);
+                if (!points || !points.length) return;
+                const idx = points[0].index;
+                const classId = __classAttendanceIds[idx];
+                if (classId) window.location.href = __classEditUrl(classId);
+            }catch(e){ /* ignore */ }
+        },
         scales: {
             y: {
                 beginAtZero: true,
@@ -456,6 +494,7 @@ const classChart = new Chart(classCtx, {
         }
     }
 });
+}
 {% endif %}
 
 // Auto-refresh dashboard data via JSON API
@@ -483,9 +522,41 @@ const classChart = new Chart(classCtx, {
     if (window.classChart && payload.class_attendance){
       const labels = payload.class_attendance.map(c => c.class_name);
       const perc = payload.class_attendance.map(c => c.percentage);
+      const ids = payload.class_attendance.map(c => c.class_id);
       window.classChart.data.labels = labels;
       window.classChart.data.datasets[0].data = perc;
+      if (typeof __classColors === 'function'){
+        window.classChart.data.datasets[0].backgroundColor = __classColors(labels.length, 0.8);
+        window.classChart.data.datasets[0].borderColor = __classColors(labels.length, 1);
+      }
       window.classChart.update();
+
+      const tbody = document.getElementById('class-attendance-tbody');
+      if (tbody){
+        const rows = payload.class_attendance;
+        tbody.innerHTML = rows.map(function(r){
+          const pct = (typeof r.percentage === 'number') ? r.percentage : parseFloat(r.percentage) || 0;
+          let badgeClass = 'bg-danger';
+          let badgeText = 'Needs Improvement';
+          if (pct >= 80){
+            badgeClass = 'bg-success';
+            badgeText = 'Excellent';
+          }else if (pct >= 60){
+            badgeClass = 'bg-warning';
+            badgeText = 'Good';
+          }
+          const link = r.class_id ? ('<a href="' + __classEditUrl(r.class_id) + '">' + String(r.class_name || '') + '</a>') : String(r.class_name || '');
+          return (
+            '<tr>' +
+              '<td><strong>' + link + '</strong></td>' +
+              '<td>' + String(r.present_count ?? '') + '</td>' +
+              '<td>' + String(r.total_count ?? '') + '</td>' +
+              '<td>' + String(pct) + '%</td>' +
+              '<td><span class="badge ' + badgeClass + '">' + badgeText + '</span></td>' +
+            '</tr>'
+          );
+        }).join('');
+      }
     }
   }
 
@@ -500,8 +571,8 @@ const classChart = new Chart(classCtx, {
   }
 
   // expose charts for updates
-  window.dailyChart = dailyChart;
-  if (typeof classChart !== 'undefined') window.classChart = classChart;
+  if (dailyChart) window.dailyChart = dailyChart;
+  if (typeof classChart !== 'undefined' && classChart) window.classChart = classChart;
 
   // initial and periodic refresh (every 60s)
   refresh();

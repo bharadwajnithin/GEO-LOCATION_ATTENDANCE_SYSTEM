@@ -17,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 from django.db import transaction
-from .forms import UserRegistrationForm, UserLoginForm, FaceDataForm
+from .forms import UserRegistrationForm, UserLoginForm, FaceDataForm, ProfileUpdateForm
 from .models import User, Class, Attendance, GeoFence
 from django.conf import settings
 from datetime import datetime, time, timedelta
@@ -48,7 +48,23 @@ def register_view(request):
         if form.is_valid():
             try:
                 with transaction.atomic():
-                    user = form.save()
+                    # Enforce role restriction: only admin can create admin/staff
+                    desired_role = form.cleaned_data.get('role')
+                    is_admin_user = request.user.is_authenticated and getattr(request.user, 'role', None) == 'admin'
+                    if not is_admin_user and desired_role in ['admin', 'staff']:
+                        messages.error(request, 'Only administrators can create Admin or Staff accounts.')
+                        # Re-render with restricted role choices
+                        try:
+                            form.fields['role'].choices = [(k, v) for k, v in form.fields['role'].choices if k == 'student']
+                        except Exception:
+                            pass
+                        return render(request, 'userview/register.html', {'form': form})
+
+                    # Persist user with enforced role when creator is not admin
+                    user = form.save(commit=False)
+                    if not is_admin_user:
+                        user.role = 'student'
+                    user.save()
 
                     # Optional: handle multiple face images for pre-training
                     face_images: List[str] = request.POST.getlist('face_images[]') or []
@@ -68,6 +84,13 @@ def register_view(request):
                 messages.error(request, f'Registration failed: {str(e)}')
     else:
         form = UserRegistrationForm()
+        # Adjust available role choices based on current user
+        is_admin_user = request.user.is_authenticated and getattr(request.user, 'role', None) == 'admin'
+        if not is_admin_user:
+            try:
+                form.fields['role'].choices = [(k, v) for k, v in form.fields['role'].choices if k == 'student']
+            except Exception:
+                pass
 
     return render(request, 'userview/register.html', {
         'form': form,
@@ -174,6 +197,20 @@ def logout_view(request):
     logout(request)
     messages.success(request, 'You have been logged out successfully.')
     return redirect('userview:login')
+
+
+@login_required
+def profile_view(request):
+    if request.method == 'POST':
+        form = ProfileUpdateForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Profile updated successfully.')
+            return redirect('userview:profile')
+    else:
+        form = ProfileUpdateForm(instance=request.user)
+
+    return render(request, 'userview/profile.html', {'form': form})
 
 
 @login_required

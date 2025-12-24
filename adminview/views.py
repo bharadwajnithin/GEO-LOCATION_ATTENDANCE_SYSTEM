@@ -32,6 +32,38 @@ def _day_bounds(day_date):
     return start, end
 
 
+def _cleanup_non_student_enrollments(classes):
+    for cls in classes:
+        try:
+            to_remove = []
+            for u in cls.students.all():
+                if getattr(u, 'role', None) != 'student':
+                    to_remove.append(u)
+            if to_remove:
+                try:
+                    cls.students.remove(*to_remove)
+                except Exception:
+                    for u in to_remove:
+                        try:
+                            cls.students.remove(u)
+                        except Exception:
+                            continue
+        except Exception:
+            continue
+
+
+def _is_truthy_bool(value):
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes', 'y', 'on')
+    return bool(value)
+
+
 def is_staff_member(user):
     """
     Check if user is a staff member or admin.
@@ -57,9 +89,19 @@ def staff_home(request):
         classes = Class.objects.all()
     else:
         classes = Class.objects.filter(staff=request.user)
+
+    _cleanup_non_student_enrollments(classes)
     
     # Get attendance statistics
-    total_students = sum(cls.students.count() for cls in classes)
+    student_ids = set()
+    for cls in classes:
+        try:
+            for u in cls.students.all():
+                if getattr(u, 'role', None) == 'student':
+                    student_ids.add(u.id)
+        except Exception:
+            continue
+    total_students = len(student_ids)
     today = timezone.now().date()
     start, end = _day_bounds(today)
     # Materialize to avoid djongo lookup edge cases
@@ -109,7 +151,15 @@ def staff_home_metrics(request):
     else:
         classes = Class.objects.filter(staff=request.user)
 
-    total_students = sum(cls.students.count() for cls in classes)
+    student_ids = set()
+    for cls in classes:
+        try:
+            for u in cls.students.all():
+                if getattr(u, 'role', None) == 'student':
+                    student_ids.add(u.id)
+        except Exception:
+            continue
+    total_students = len(student_ids)
     today = timezone.now().date()
     start, end = _day_bounds(today)
     today_records = list(Attendance.objects.filter(
@@ -133,12 +183,32 @@ def admin_dashboard(request):
     """
     Admin dashboard view with comprehensive analytics.
     """
+    try:
+        _cleanup_non_student_enrollments(list(Class.objects.all()))
+    except Exception:
+        pass
+
     # Get overall statistics
-    total_users = User.objects.count()
-    total_students = User.objects.filter(role='student').count()
-    total_staff = User.objects.filter(role='staff').count()
-    total_classes = Class.objects.count()
-    total_geofences = GeoFence.objects.count()
+    try:
+        total_users = User.objects.count()
+    except Exception:
+        total_users = len(list(User.objects.all()))
+    try:
+        total_students = User.objects.filter(role='student').count()
+    except Exception:
+        total_students = len([u for u in list(User.objects.all()) if getattr(u, 'role', None) == 'student'])
+    try:
+        total_staff = User.objects.filter(role='staff').count()
+    except Exception:
+        total_staff = len([u for u in list(User.objects.all()) if getattr(u, 'role', None) == 'staff'])
+    try:
+        total_classes = Class.objects.count()
+    except Exception:
+        total_classes = len(list(Class.objects.all()))
+    try:
+        total_geofences = GeoFence.objects.count()
+    except Exception:
+        total_geofences = len(list(GeoFence.objects.all()))
     
     # Get attendance statistics for the last 30 days
     thirty_days_ago = timezone.now() - timedelta(days=30)
@@ -154,19 +224,19 @@ def admin_dashboard(request):
     
     # Get class-wise attendance
     class_attendance = []
-    classes = list(Class.objects.all())
+    classes = [c for c in list(Class.objects.all()) if _is_truthy_bool(getattr(c, 'is_active', True))]
     for class_instance in classes:
         class_records = [r for r in recent_attendance if r.class_instance_id == class_instance.id]
-        if class_records:
-            present_count = sum(1 for r in class_records if r.is_present)
-            total_count = len(class_records)
-            percentage = (present_count / total_count * 100) if total_count > 0 else 0
-            class_attendance.append({
-                'class_name': class_instance.name,
-                'present_count': present_count,
-                'total_count': total_count,
-                'percentage': round(percentage, 2)
-            })
+        present_count = sum(1 for r in class_records if r.is_present)
+        total_count = len(class_records)
+        percentage = (present_count / total_count * 100) if total_count > 0 else 0
+        class_attendance.append({
+            'class_id': class_instance.id,
+            'class_name': class_instance.name,
+            'present_count': present_count,
+            'total_count': total_count,
+            'percentage': round(percentage, 2)
+        })
     
     # Get daily attendance trend (use date range instead of __date)
     daily_attendance = []
@@ -217,20 +287,20 @@ def admin_dashboard_metrics(request):
     attendance_percentage = round((present_records / total_attendance_records * 100) if total_attendance_records > 0 else 0, 2)
 
     # Recompute charts data
-    classes = list(Class.objects.all())
+    classes = [c for c in list(Class.objects.all()) if _is_truthy_bool(getattr(c, 'is_active', True))]
     class_attendance = []
     for class_instance in classes:
         class_records = [r for r in recent_attendance if r.class_instance_id == class_instance.id]
-        if class_records:
-            present_count = sum(1 for r in class_records if r.is_present)
-            total_count = len(class_records)
-            percentage = (present_count / total_count * 100) if total_count > 0 else 0
-            class_attendance.append({
-                'class_name': class_instance.name,
-                'present_count': present_count,
-                'total_count': total_count,
-                'percentage': round(percentage, 2)
-            })
+        present_count = sum(1 for r in class_records if r.is_present)
+        total_count = len(class_records)
+        percentage = (present_count / total_count * 100) if total_count > 0 else 0
+        class_attendance.append({
+            'class_id': class_instance.id,
+            'class_name': class_instance.name,
+            'present_count': present_count,
+            'total_count': total_count,
+            'percentage': round(percentage, 2)
+        })
 
     daily_attendance = []
     for i in range(7):
@@ -248,11 +318,11 @@ def admin_dashboard_metrics(request):
 
     payload = {
         'totals': {
-            'total_users': User.objects.count(),
-            'total_students': User.objects.filter(role='student').count(),
-            'total_staff': User.objects.filter(role='staff').count(),
-            'total_classes': Class.objects.count(),
-            'total_geofences': GeoFence.objects.count(),
+            'total_users': (User.objects.count() if hasattr(User.objects, 'count') else len(list(User.objects.all()))),
+            'total_students': (User.objects.filter(role='student').count() if hasattr(User.objects, 'filter') else 0),
+            'total_staff': (User.objects.filter(role='staff').count() if hasattr(User.objects, 'filter') else 0),
+            'total_classes': (Class.objects.count() if hasattr(Class.objects, 'count') else len(list(Class.objects.all()))),
+            'total_geofences': (GeoFence.objects.count() if hasattr(GeoFence.objects, 'count') else len(list(GeoFence.objects.all()))),
         },
         'metrics': {
             'total_attendance_records': total_attendance_records,
@@ -447,7 +517,7 @@ def class_toggle_active(request, class_id):
         messages.error(request, 'You do not have permission to modify this class.')
         return redirect('adminview:class_list')
 
-    class_instance.is_active = not bool(class_instance.is_active)
+    class_instance.is_active = not _is_truthy_bool(getattr(class_instance, 'is_active', False))
     class_instance.save(update_fields=['is_active'])
     status = 'enabled' if class_instance.is_active else 'disabled'
     messages.success(request, f'Class "{class_instance.name}" {status} successfully!')
@@ -467,6 +537,8 @@ def class_enrollment(request, class_id):
         if request.user.role != 'admin' and class_instance.staff != request.user:
             messages.error(request, 'You do not have permission to manage this class.')
             return redirect('adminview:class_list')
+
+        _cleanup_non_student_enrollments([class_instance])
         
         if request.method == 'POST':
             form = StudentEnrollmentForm(request.POST, class_instance=class_instance)
@@ -508,7 +580,8 @@ def class_enrollment(request, class_id):
             # Use a simple query to avoid complex operations
             enrolled_students = []
             for student in class_instance.students.all():
-                enrolled_students.append(student)
+                if request.user.role == 'admin' or getattr(student, 'role', None) == 'student':
+                    enrolled_students.append(student)
         except Exception as e:
             print(f"Warning: Could not fetch enrolled students: {e}")
             enrolled_students = []
