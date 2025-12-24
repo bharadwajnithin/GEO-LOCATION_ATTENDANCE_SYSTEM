@@ -51,6 +51,8 @@ source venv/bin/activate
 - Minimal runtime:
 ```bash
 pip install -r requirements.txt
+
+or better you do it enhanced_requorements.txt
 ```
 
 - Advanced face/geo stack (optional, heavy deps):
@@ -145,4 +147,4 @@ Specify your license here (e.g., MIT). If not specified, the project is propriet
 - OpenCV, NumPy, Pillow
 - Google Maps JavaScript API
 - Optional: MediaPipe, DeepFace/Facenet, TensorFlow/PyTorch, dlib
-# -GAS-GEO-LOCATION-ATTENDANCE-TRACKING-SYSTEM
+
