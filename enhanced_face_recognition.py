@@ -22,7 +22,7 @@ class AdvancedFaceRecognition:
     Advanced face recognition system with liveness detection and multiple model support
     """
     
-    def __init__(self, model_name: str = "Facenet", confidence_threshold: float = 0.95):
+    def __init__(self, model_name: str = "Facenet", confidence_threshold: float = 0.7):
         self.model_name = model_name
         self.confidence_threshold = confidence_threshold
         self.mp_face_detection = mp.solutions.face_detection
@@ -67,6 +67,13 @@ class AdvancedFaceRecognition:
         try:
             image_array = np.frombuffer(image_bytes, np.uint8)
             image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+            if image is None:
+                return {
+                    'is_live': False,
+                    'liveness_score': 0.0,
+                    'face_detected': False,
+                    'confidence': 0.0
+                }
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
             # Use MediaPipe for face detection
@@ -105,18 +112,28 @@ class AdvancedFaceRecognition:
             h, w, _ = image.shape
             bbox = detection.location_data.relative_bounding_box
             
-            x = int(bbox.xmin * w)
-            y = int(bbox.ymin * h)
-            width = int(bbox.width * w)
-            height = int(bbox.height * h)
+            x1 = int(bbox.xmin * w)
+            y1 = int(bbox.ymin * h)
+            x2 = int((bbox.xmin + bbox.width) * w)
+            y2 = int((bbox.ymin + bbox.height) * h)
             
-            face_roi = image[y:y+height, x:x+width]
+            x1 = max(0, min(w - 1, x1))
+            y1 = max(0, min(h - 1, y1))
+            x2 = max(0, min(w, x2))
+            y2 = max(0, min(h, y2))
+            
+            if x2 <= x1 or y2 <= y1:
+                return 0.0
+
+            face_roi = image[y1:y2, x1:x2]
+            if face_roi.size == 0:
+                return 0.0
             
             # Basic liveness indicators
             liveness_indicators = []
             
             # 1. Face size consistency
-            if width > 50 and height > 50:
+            if face_roi.shape[1] > 50 and face_roi.shape[0] > 50:
                 liveness_indicators.append(0.3)
             
             # 2. Image quality (blur detection)

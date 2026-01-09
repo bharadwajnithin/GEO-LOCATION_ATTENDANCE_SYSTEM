@@ -16,8 +16,9 @@ class SimpleFaceRecognition:
     Simple face recognition using OpenCV Haar cascades and basic feature extraction
     """
     
-    def __init__(self, confidence_threshold: float = 0.6):
+    def __init__(self, confidence_threshold: float = 0.6, require_face: bool = True):
         self.confidence_threshold = confidence_threshold
+        self.require_face = require_face
         # Load face detection cascade
         self.face_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -44,7 +45,9 @@ class SimpleFaceRecognition:
             )
             
             if len(faces) == 0:
-                # Fallback: use center region of image as "face"
+                if self.require_face:
+                    return None
+                # Legacy fallback (not recommended): use center region as "face"
                 h, w = gray.shape
                 center_x, center_y = w // 2, h // 2
                 face_size = min(w, h) // 2

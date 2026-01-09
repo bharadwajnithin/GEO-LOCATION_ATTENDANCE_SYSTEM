@@ -22,6 +22,7 @@ from .models import User, Class, Attendance, GeoFence
 from django.conf import settings
 from datetime import datetime, time, timedelta
 import math
+import logging
 from typing import List
 
 try:
@@ -30,6 +31,8 @@ try:
     _advanced_fr_available = True
 except Exception:
     _advanced_fr_available = False
+
+logger = logging.getLogger(__name__)
 
 # Import simple face recognition as fallback
 try:
@@ -48,14 +51,14 @@ def register_view(request):
         if form.is_valid():
             try:
                 with transaction.atomic():
-                    # Enforce role restriction: only admin can create admin/staff
+                    # Enforce role restriction: only admin can create admin accounts
                     desired_role = form.cleaned_data.get('role')
                     is_admin_user = request.user.is_authenticated and getattr(request.user, 'role', None) == 'admin'
-                    if not is_admin_user and desired_role in ['admin', 'staff']:
-                        messages.error(request, 'Only administrators can create Admin or Staff accounts.')
+                    if not is_admin_user and desired_role in ['admin']:
+                        messages.error(request, 'Only administrators can create Admin accounts.')
                         # Re-render with restricted role choices
                         try:
-                            form.fields['role'].choices = [(k, v) for k, v in form.fields['role'].choices if k == 'student']
+                            form.fields['role'].choices = [(k, v) for k, v in form.fields['role'].choices if k in ('student', 'staff')]
                         except Exception:
                             pass
                         return render(request, 'userview/register.html', {'form': form})
@@ -63,7 +66,8 @@ def register_view(request):
                     # Persist user with enforced role when creator is not admin
                     user = form.save(commit=False)
                     if not is_admin_user:
-                        user.role = 'student'
+                        # Allow self-registration for student or staff; never admin
+                        user.role = desired_role if desired_role in ['student', 'staff'] else 'student'
                     user.save()
 
                     # Optional: handle multiple face images for pre-training
@@ -88,7 +92,7 @@ def register_view(request):
         is_admin_user = request.user.is_authenticated and getattr(request.user, 'role', None) == 'admin'
         if not is_admin_user:
             try:
-                form.fields['role'].choices = [(k, v) for k, v in form.fields['role'].choices if k == 'student']
+                form.fields['role'].choices = [(k, v) for k, v in form.fields['role'].choices if k in ('student', 'staff')]
             except Exception:
                 pass
 
@@ -112,7 +116,7 @@ def _store_user_embeddings(user: User, face_images_b64: List[str]) -> bool:
     model_type = 'simple'
     if _simple_fr_available:
         try:
-            recognizer = SimpleFaceRecognition(confidence_threshold=0.6)
+            recognizer = SimpleFaceRecognition(confidence_threshold=0.6, require_face=True)
             model_type = 'simple'
         except Exception:
             recognizer = None
@@ -312,6 +316,10 @@ def save_face_enroll(request):
         images = payload.get('images') or []
         if not images:
             return JsonResponse({'success': False, 'error': 'No images provided'}, status=400)
+        # Enforce minimum enrollment frames (default 40)
+        min_frames = int(getattr(settings, 'MIN_ENROLL_FRAMES', 40))
+        if len(images) < min_frames:
+            return JsonResponse({'success': False, 'error': f'Minimum {min_frames} images required for enrollment'}, status=400)
         saved = _store_user_embeddings(request.user, images)
         if not saved:
             return JsonResponse({'success': False, 'error': 'Could not extract embeddings'}, status=400)
@@ -338,7 +346,6 @@ def mark_attendance(request):
         face_image_data = data.get('face_image')
         latitude = data.get('latitude')
         longitude = data.get('longitude')
-        accuracy = data.get('accuracy')
         accuracy = data.get('accuracy')
         
         if not all([class_id, face_image_data, latitude, longitude]):
@@ -407,6 +414,10 @@ def mark_attendance(request):
             # Get detailed verification results
             face_similarity_score = get_face_similarity_score(request.user, face_image_data)
             liveness_score = get_liveness_score(face_image_data)
+
+            min_live = float(getattr(settings, 'LIVENESS_MIN_SCORE', 0.4))
+            if liveness_score < min_live:
+                face_verified = False
         else:
             return JsonResponse({
                 'success': False,
@@ -450,6 +461,18 @@ def mark_attendance(request):
                     location_verified=True
                 )
             
+            try:
+                logger.info(
+                    'attendance_face_accepted user=%s class_id=%s face_similarity=%.4f liveness=%.4f location_verified=%s',
+                    getattr(request.user, 'username', None),
+                    class_id,
+                    float(face_similarity_score),
+                    float(liveness_score),
+                    bool(location_verified),
+                )
+            except Exception:
+                pass
+
             return JsonResponse({
                 'success': True,
                 'message': 'Attendance marked successfully!',
@@ -465,7 +488,19 @@ def mark_attendance(request):
             if not location_verified:
                 error_message = 'Location verification failed. Please ensure you are within the geo-fenced area.'
             elif not face_verified:
-                error_message = 'Face verification failed. Please ensure good lighting and clear face visibility.'
+                error_message = 'Face not recognized. Attendance not marked.'
+
+            try:
+                logger.warning(
+                    'attendance_face_rejected user=%s class_id=%s face_similarity=%.4f liveness=%.4f location_verified=%s',
+                    getattr(request.user, 'username', None),
+                    class_id,
+                    float(face_similarity_score),
+                    float(liveness_score),
+                    bool(location_verified),
+                )
+            except Exception:
+                pass
             
             return JsonResponse({
                 'success': False,
@@ -505,6 +540,12 @@ def generate_face_encoding(image_file):
         
         # Convert to grayscale for face detection
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # Lighting normalization for robustness
+        try:
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            gray = clahe.apply(gray)
+        except Exception:
+            pass
         
         # Load OpenCV's face detection cascade
         face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -512,8 +553,8 @@ def generate_face_encoding(image_file):
         # Detect faces
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
         
-        if len(faces) > 0:
-            # Get the first face detected
+        # Enforce single-face requirement
+        if len(faces) == 1:
             x, y, w, h = faces[0]
             face_roi = gray[y:y+h, x:x+w]
             
@@ -524,7 +565,8 @@ def generate_face_encoding(image_file):
             encoding = face_roi.flatten().astype(np.float32)
             
             # Normalize the encoding
-            encoding = (encoding - np.mean(encoding)) / np.std(encoding)
+            std = float(np.std(encoding))
+            encoding = (encoding - np.mean(encoding)) / (std if std > 1e-6 else 1.0)
             
             return encoding.tolist()
         else:
@@ -555,8 +597,8 @@ def generate_face_encoding_from_bytes(image_bytes):
         # Detect faces
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
         
-        if len(faces) > 0:
-            # Get the first face detected
+        # Enforce single-face requirement
+        if len(faces) == 1:
             x, y, w, h = faces[0]
             face_roi = gray[y:y+h, x:x+w]
             
@@ -567,7 +609,8 @@ def generate_face_encoding_from_bytes(image_bytes):
             encoding = face_roi.flatten().astype(np.float32)
             
             # Normalize the encoding
-            encoding = (encoding - np.mean(encoding)) / np.std(encoding)
+            std = float(np.std(encoding))
+            encoding = (encoding - np.mean(encoding)) / (std if std > 1e-6 else 1.0)
             
             return encoding
         else:
@@ -600,7 +643,7 @@ def verify_face(user, face_image_data):
         # Try to use the same model that was used for enrollment
         if stored_model == 'simple' and _simple_fr_available:
             try:
-                recognizer = SimpleFaceRecognition(confidence_threshold=0.6)
+                recognizer = SimpleFaceRecognition(confidence_threshold=0.6, require_face=True)
                 live_embedding = recognizer.extract_face_embeddings(image_bytes)
             except Exception:
                 live_embedding = None
@@ -612,8 +655,9 @@ def verify_face(user, face_image_data):
         else:
             live_embedding = None
         
-        # Fallback to OpenCV method
-        if live_embedding is None:
+        # Strict mode: do NOT fall back to a different embedding method when enrollment
+        # was done with a specific model (prevents false accepts).
+        if live_embedding is None and stored_model not in ('simple', 'opencv_simplified'):
             encoding = generate_face_encoding_from_bytes(image_bytes)
             if encoding is not None:
                 live_embedding = np.array(encoding)
@@ -626,22 +670,35 @@ def verify_face(user, face_image_data):
             return v / (np.linalg.norm(v) + 1e-8)
 
         live_embedding = _l2norm(live_embedding)
-
-        best_score = -1.0
+        
+        # Compute similarities against enrolled embeddings
+        scores = []
         for emb in embeddings:
             try:
                 emb_arr = _l2norm(np.array(emb))
                 score = float(np.dot(emb_arr, live_embedding))
-                if score > best_score:
-                    best_score = score
+                scores.append(score)
             except Exception:
                 continue
 
-        if best_score < 0:
+        if not scores:
             return False
 
-        threshold = float(getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.75))
-        return best_score >= threshold
+        threshold = float(getattr(settings, 'FACE_MATCH_MIN_SIMILARITY', getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.6)))
+        # Require multiple embeddings to exceed the threshold to reduce false accepts
+        n = len(scores)
+        required = 5 if n >= 5 else n
+        passed = sum(1 for s in scores if s >= threshold)
+        if passed < required:
+            return False
+
+        # Median safeguard to avoid outlier-based acceptance
+        try:
+            median_score = float(np.median(np.array(scores)))
+        except Exception:
+            median_score = min(scores)
+        median_floor = max(0.0, threshold)
+        return median_score >= median_floor
     except Exception:
         return False
 
@@ -781,7 +838,7 @@ def get_face_similarity_score(user, face_image_data):
         # Try to use the same model that was used for enrollment
         if stored_model == 'simple' and _simple_fr_available:
             try:
-                recognizer = SimpleFaceRecognition(confidence_threshold=0.6)
+                recognizer = SimpleFaceRecognition(confidence_threshold=0.6, require_face=True)
                 live_embedding = recognizer.extract_face_embeddings(image_bytes)
             except Exception:
                 live_embedding = None
@@ -792,13 +849,13 @@ def get_face_similarity_score(user, face_image_data):
                 live_embedding = np.array(encoding)
         elif _advanced_fr_available:
             try:
-                recognizer = AdvancedFaceRecognition(model_name='Facenet', confidence_threshold=0.95)
+                recognizer = AdvancedFaceRecognition(model_name='Facenet', confidence_threshold=0.7)
                 live_embedding = recognizer.extract_face_embeddings(image_bytes)
             except Exception:
                 live_embedding = None
         
-        # Fallback to OpenCV method
-        if live_embedding is None:
+        # Strict mode: avoid cross-model fallback unless the enrollment model is unknown.
+        if live_embedding is None and stored_model not in ('simple', 'opencv_simplified'):
             encoding = generate_face_encoding_from_bytes(image_bytes)
             if encoding is not None:
                 live_embedding = np.array(encoding)
@@ -835,12 +892,22 @@ def identify_mark_attendance(request):
     Requires: class_id, face_image (base64), latitude, longitude.
     Security: Ensures identified face matches the logged-in user.
     """
+    # Students must not use identification (one-to-many). Force one-to-one only.
+    try:
+        if getattr(request.user, 'role', None) == 'student':
+            return JsonResponse({
+                'success': False,
+                'error': 'Access denied. Use one-to-one verification endpoint.'
+            }, status=403)
+    except Exception:
+        pass
     try:
         data = json.loads(request.body)
         class_id = data.get('class_id')
         face_image_data = data.get('face_image')
         latitude = data.get('latitude')
         longitude = data.get('longitude')
+        accuracy = data.get('accuracy')
 
         if not all([class_id, face_image_data, latitude, longitude]):
             return JsonResponse({'success': False, 'error': 'Missing required data'}, status=400)
@@ -861,8 +928,6 @@ def identify_mark_attendance(request):
         except Exception:
             accuracy_val = None
         max_acc = getattr(settings, 'LOCATION_MAX_ACCURACY_METERS', 50)
-        if accuracy_val is not None and accuracy_val > max_acc:
-            return JsonResponse({'success': False, 'error': f'Location accuracy too low (>{max_acc}m). Move to an area with better GPS signal.'}, status=400)
         location_verified = verify_location(class_instance.geolocation, latitude, longitude)
 
         # Additional polygon check with buffer tolerance
@@ -874,6 +939,9 @@ def identify_mark_attendance(request):
                 distance_m = distance_to_polygon_meters(student_point, class_instance.geolocation.coordinates)
                 location_verified = distance_m is not None and distance_m <= float(buffer_m)
         if not location_verified:
+            # Only hard-fail on poor accuracy when outside geofence/buffer
+            if accuracy_val is not None and accuracy_val > max_acc:
+                return JsonResponse({'success': False, 'error': f'Location accuracy too low (> {max_acc}m). Move to an area with better GPS signal.'}, status=400)
             return JsonResponse({'success': False, 'error': 'Location verification failed'}, status=400)
 
         # Prepare live embedding
@@ -882,12 +950,36 @@ def identify_mark_attendance(request):
             face_image_data = face_image_data.split(',')[1]
         image_bytes = base64.b64decode(face_image_data)
 
+        # Enforce single-face validation before embedding extraction
+        try:
+            nparr_check = np.frombuffer(image_bytes, np.uint8)
+            img_check = cv2.imdecode(nparr_check, cv2.IMREAD_COLOR)
+            if img_check is None:
+                return JsonResponse({'success': False, 'error': 'No face detected'}, status=400)
+            gray_check = cv2.cvtColor(img_check, cv2.COLOR_BGR2GRAY)
+            face_cascade_check = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            faces_check = face_cascade_check.detectMultiScale(gray_check, 1.1, 4)
+            if len(faces_check) == 0:
+                try:
+                    logger.info('attendance_reject_no_face user=%s class_id=%s', getattr(request.user, 'username', None), class_id)
+                except Exception:
+                    pass
+                return JsonResponse({'success': False, 'error': 'Unauthorized face detected. Attendance not marked.'}, status=400)
+            if len(faces_check) > 1:
+                try:
+                    logger.info('attendance_reject_multiple_faces user=%s class_id=%s faces=%d', getattr(request.user, 'username', None), class_id, len(faces_check))
+                except Exception:
+                    pass
+                return JsonResponse({'success': False, 'error': 'Multiple faces detected. Please ensure only your face is visible.'}, status=400)
+        except Exception:
+            pass
+
         live_embedding = None
         
         # Use simple face recognition for consistency with enrollment
         if _simple_fr_available:
             try:
-                recognizer = SimpleFaceRecognition(confidence_threshold=0.6)
+                recognizer = SimpleFaceRecognition(confidence_threshold=0.6, require_face=True)
                 live_embedding = recognizer.extract_face_embeddings(image_bytes)
             except Exception:
                 live_embedding = None
@@ -900,6 +992,13 @@ def identify_mark_attendance(request):
 
         if live_embedding is None:
             return JsonResponse({'success': False, 'error': 'No face detected'}, status=400)
+
+        # Normalize live embedding (cosine similarity expects consistent normalization)
+        try:
+            live_embedding = np.array(live_embedding)
+            live_embedding = live_embedding / (np.linalg.norm(live_embedding) + 1e-8)
+        except Exception:
+            return JsonResponse({'success': False, 'error': 'Could not normalize face embedding'}, status=400)
 
         # Identify among students enrolled in this class
         candidates = class_instance.students.all()
@@ -923,7 +1022,7 @@ def identify_mark_attendance(request):
                 continue
 
         # Thresholds
-        threshold = float(getattr(settings, 'ADV_FACE_COSINE_THRESHOLD', 0.6)) if _advanced_fr_available else float(getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.6))
+        threshold = float(getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.6))
         if best_user is None or best_score < threshold:
             return JsonResponse({'success': False, 'error': 'Face not recognized'}, status=400)
 
@@ -976,45 +1075,6 @@ def identify_mark_attendance(request):
         return JsonResponse({'success': False, 'error': 'Invalid JSON data'}, status=400)
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
-        # Convert stored face data back to numpy array
-        stored_encoding = np.array(user.face_data)
-        
-        # Decode base64 image data and process
-        if face_image_data.startswith('data:image'):
-            face_image_data = face_image_data.split(',')[1]
-        
-        image_bytes = base64.b64decode(face_image_data)
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        if image is None:
-            return 0.0
-        
-        # Convert to grayscale
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
-        # Load face detection cascade
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
-        
-        if len(faces) > 0:
-            x, y, w, h = faces[0]
-            face_roi = gray[y:y+h, x:x+w]
-            face_roi = cv2.resize(face_roi, (64, 64))
-            
-            # Generate current encoding
-            current_encoding = face_roi.flatten().astype(np.float32)
-            current_encoding = (current_encoding - np.mean(current_encoding)) / np.std(current_encoding)
-            
-            # Calculate similarity (cosine similarity)
-            similarity = np.dot(stored_encoding, current_encoding) / (np.linalg.norm(stored_encoding) * np.linalg.norm(current_encoding))
-            return max(0.0, similarity)  # Ensure non-negative
-        
-        return 0.0
-        
-    except Exception as e:
-        print(f"Error calculating face similarity: {e}")
-        return 0.0
 
 
 def get_liveness_score(face_image_data):
@@ -1049,7 +1109,7 @@ def get_liveness_score(face_image_data):
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
         
         if len(faces) > 0:
-            x, y, w, h = faces[0]
+            x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
             if w > 50 and h > 50:
                 liveness_score += 0.3
         

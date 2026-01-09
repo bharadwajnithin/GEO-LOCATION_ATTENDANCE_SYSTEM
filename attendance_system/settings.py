@@ -162,8 +162,13 @@ FACE_RECOGNITION_TOLERANCE = config('FACE_RECOGNITION_TOLERANCE', default=0.6, c
 FACE_RECOGNITION_MODEL = config('FACE_RECOGNITION_MODEL', default='hog')
 ADV_FACE_COSINE_THRESHOLD = config('ADV_FACE_COSINE_THRESHOLD', default=0.5, cast=float)
 
+# Strict one-to-one verification thresholds
+FACE_MATCH_MIN_SIMILARITY = config('FACE_MATCH_MIN_SIMILARITY', default=0.6, cast=float)
+LIVENESS_MIN_SCORE = config('LIVENESS_MIN_SCORE', default=0.4, cast=float)
+
 # Geo-fencing settings
 GEO_FENCING_BUFFER = config('GEO_FENCING_BUFFER', default=10, cast=int)
+GEOFENCE_ALLOWED_BUFFER_METERS = config('GEOFENCE_ALLOWED_BUFFER_METERS', default=15, cast=int)
 LOCATION_MAX_ACCURACY_METERS = config('LOCATION_MAX_ACCURACY_METERS', default=50, cast=int)
 
 # Google Maps API - Try multiple sources

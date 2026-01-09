@@ -1,5 +1,5 @@
 /* Basic PWA Service Worker for Django app */
-const CACHE_NAME = 'attendance-pwa-v2';
+const CACHE_NAME = 'attendance-pwa-v4';
 const OFFLINE_URL = '/static/offline.html';
 const PRECACHE_URLS = [
   '/',
@@ -40,6 +40,15 @@ self.addEventListener('fetch', event => {
 
   // Navigation requests: network-first, fallback to cache/offline
   if (req.mode === 'navigate') {
+    // Never cache authenticated/admin dashboards to avoid stale pages after updates
+    if (
+      url.pathname.startsWith('/adminview/') ||
+      url.pathname.startsWith('/student-home/') ||
+      url.pathname.startsWith('/face-enroll/')
+    ) {
+      event.respondWith(fetch(req));
+      return;
+    }
     event.respondWith(
       fetch(req).then(resp => {
         const copy = resp.clone();

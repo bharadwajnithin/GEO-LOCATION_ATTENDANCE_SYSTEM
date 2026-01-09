@@ -14,11 +14,16 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <!-- Custom CSS -->
     <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
         .navbar-brand {
             font-weight: bold;
         }
         .main-content {
-            min-height: calc(100vh - 100px);
+            flex: 1 0 auto;
             padding: 20px 0;
         }
         .card {
@@ -39,6 +44,9 @@
         .form-control:focus {
             border-color: #007bff;
             box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+        }
+        footer {
+            flex-shrink: 0;
         }
     </style>
     
@@ -168,11 +176,11 @@
             {% block content %}{% endblock %}
         </div>
     </div>
-
+    
     <!-- Footer -->
-    <footer class="bg-light text-center text-muted py-3">
+    <footer class="bg-light text-center text-muted py-3 border-top">
         <div class="container">
-            <small>&copy; 2024 Geo-Location Based Attendance System. All rights reserved.</small>
+            <small>© 2025 Geo-Location Based Attendance System. All Rights Reserved.</small>
         </div>
     </footer>
 

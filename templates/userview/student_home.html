@@ -1104,7 +1104,7 @@
     updateFaceVerification('processing');
     
     try {
-      const response = await fetch('{% url "userview:identify_mark_attendance" %}', {
+      const response = await fetch('{% url "userview:mark_attendance" %}', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

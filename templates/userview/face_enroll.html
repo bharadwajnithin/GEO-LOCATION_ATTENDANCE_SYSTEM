@@ -17,7 +17,7 @@
             <strong>Status:</strong> <span id="statusText" class="text-muted">Initializing camera…</span>
           </div>
           <div class="mb-2">
-            <strong>Captured frames:</strong> <span id="counter">0</span> / <span id="target">12</span>
+            <strong>Captured frames:</strong> <span id="counter">0</span> / <span id="target">40</span>
           </div>
           <div class="progress mb-3" style="height: 8px;">
             <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
@@ -47,7 +47,7 @@
   const startBtn = document.getElementById('startBtn');
   const cancelBtn = document.getElementById('cancelBtn');
 
-  const TARGET_FRAMES = 12; // capture count
+  const TARGET_FRAMES = 40; // capture count
   targetEl.textContent = TARGET_FRAMES;
   let captured = 0;
   let running = false;

@@ -84,11 +84,16 @@ def staff_home(request):
     """
     Staff dashboard view.
     """
-    # Get classes taught by the staff member
+    # Get classes taught by the staff member (avoid boolean filter in SQL for Djongo)
     if request.user.role == 'admin':
-        classes = Class.objects.all()
+        classes_qs = Class.objects.all()
     else:
-        classes = Class.objects.filter(staff=request.user)
+        classes_qs = Class.objects.filter(staff_id=request.user.id)
+    # Filter is_active in Python to avoid Djongo boolean WHERE issues
+    try:
+        classes = [c for c in list(classes_qs) if _is_truthy_bool(getattr(c, 'is_active', True))]
+    except Exception:
+        classes = list(classes_qs)
 
     _cleanup_non_student_enrollments(classes)
     
@@ -104,9 +109,10 @@ def staff_home(request):
     total_students = len(student_ids)
     today = timezone.now().date()
     start, end = _day_bounds(today)
-    # Materialize to avoid djongo lookup edge cases
+    # Materialize to avoid djongo lookup edge cases and avoid __in with model instances
+    class_ids = [c.id for c in classes]
     today_records = list(Attendance.objects.filter(
-        class_instance__in=classes,
+        class_instance_id__in=class_ids,
         timestamp__gte=start,
         timestamp__lt=end
     ).select_related('class_instance'))
@@ -129,8 +135,23 @@ def staff_home(request):
                 'coordinates': geo.coordinates,
             })
 
+    # Total classes created by this staff (no active filter)
+    try:
+        if request.user.role == 'admin':
+            classes_total_count = Class.objects.count()
+        else:
+            classes_total_count = Class.objects.filter(staff_id=request.user.id).count()
+    except Exception:
+        # Fallback without DB-level count
+        if request.user.role == 'admin':
+            classes_total_count = len(list(Class.objects.all()))
+        else:
+            classes_total_count = len([c for c in list(Class.objects.all()) if getattr(c, 'staff_id', None) == request.user.id])
+
     context = {
         'classes': classes,
+        'classes_count': len(classes),
+        'classes_total_count': classes_total_count,
         'total_students': total_students,
         'today_attendance': today_attendance,
         'google_maps_api_key': getattr(settings, 'GOOGLE_MAPS_API_KEY', None),
@@ -145,11 +166,15 @@ def staff_home_metrics(request):
     """
     JSON metrics for staff dashboard auto-refresh.
     """
-    # Classes for this user
+    # Classes for this user (avoid boolean filter in SQL for Djongo)
     if request.user.role == 'admin':
-        classes = Class.objects.all()
+        classes_qs = Class.objects.all()
     else:
-        classes = Class.objects.filter(staff=request.user)
+        classes_qs = Class.objects.filter(staff_id=request.user.id)
+    try:
+        classes = [c for c in list(classes_qs) if _is_truthy_bool(getattr(c, 'is_active', True))]
+    except Exception:
+        classes = list(classes_qs)
 
     student_ids = set()
     for cls in classes:
@@ -162,17 +187,71 @@ def staff_home_metrics(request):
     total_students = len(student_ids)
     today = timezone.now().date()
     start, end = _day_bounds(today)
+    class_ids = [c.id for c in classes]
     today_records = list(Attendance.objects.filter(
-        class_instance__in=classes,
+        class_instance_id__in=class_ids,
         timestamp__gte=start,
         timestamp__lt=end
     ))
     today_attendance = sum(1 for r in today_records if r.is_present)
 
+    # Build recent (7 days) attendance aggregates for this staff's active classes
+    seven_days_ago = timezone.now() - timedelta(days=7)
+    recent_records = list(Attendance.objects.filter(
+        class_instance_id__in=class_ids,
+        timestamp__gte=seven_days_ago
+    ))
+
+    # Daily attendance trend (last 7 days)
+    daily_attendance = []
+    for i in range(7):
+        day = timezone.now().date() - timedelta(days=i)
+        start, end = _day_bounds(day)
+        day_records = [r for r in recent_records if start <= r.timestamp < end]
+        present_count = sum(1 for r in day_records if r.is_present)
+        total_count = len(day_records)
+        daily_attendance.append({
+            'date': day.strftime('%Y-%m-%d'),
+            'present_count': present_count,
+            'total_count': total_count,
+            'percentage': round((present_count / total_count * 100) if total_count > 0 else 0, 2),
+        })
+    daily_attendance.reverse()
+
+    # Class-wise attendance summary over the recent period
+    class_attendance = []
+    for cls in classes:
+        cls_recs = [r for r in recent_records if r.class_instance_id == cls.id]
+        present_count = sum(1 for r in cls_recs if r.is_present)
+        total_count = len(cls_recs)
+        percentage = round((present_count / total_count * 100) if total_count > 0 else 0, 2)
+        class_attendance.append({
+            'class_id': cls.id,
+            'class_name': cls.name,
+            'present_count': present_count,
+            'total_count': total_count,
+            'percentage': percentage,
+        })
+
+    # Total classes created by this staff (no active filter)
+    try:
+        if request.user.role == 'admin':
+            classes_total_count = Class.objects.count()
+        else:
+            classes_total_count = Class.objects.filter(staff_id=request.user.id).count()
+    except Exception:
+        if request.user.role == 'admin':
+            classes_total_count = len(list(Class.objects.all()))
+        else:
+            classes_total_count = len([c for c in list(Class.objects.all()) if getattr(c, 'staff_id', None) == request.user.id])
+
     payload = {
-        'classes_count': classes.count() if hasattr(classes, 'count') else len(list(classes)),
+        'classes_count': len(classes),
+        'classes_total_count': classes_total_count,
         'total_students': total_students,
         'today_attendance': today_attendance,
+        'daily_attendance': daily_attendance,
+        'class_attendance': class_attendance,
     }
     return JsonResponse(payload)
 

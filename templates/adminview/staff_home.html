@@ -14,15 +14,14 @@
     </div>
 </div>
 
-<!-- Statistics Cards -->
 <div class="row mb-4">
-    <div class="col-md-3 mb-3">
+    <div class="col-md-4 mb-3">
         <div class="card bg-primary text-white">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
-                        <h4 id="staff-classes-count" class="card-title">{{ classes.count }}</h4>
-                        <p class="card-text">Total Classes</p>
+                        <h4 id="staff-classes-count" class="card-title">{{ classes_count }}</h4>
+                        <p class="card-text">Active Classes</p>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-book fa-2x"></i>
@@ -31,14 +30,14 @@
             </div>
         </div>
     </div>
-    
-    <div class="col-md-3 mb-3">
+
+    <div class="col-md-4 mb-3">
         <div class="card bg-success text-white">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
                         <h4 id="staff-total-students" class="card-title">{{ total_students }}</h4>
-                        <p class="card-text">Total Students</p>
+                        <p class="card-text">Active Students</p>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-users fa-2x"></i>
@@ -47,8 +46,8 @@
             </div>
         </div>
     </div>
-    
-    <div class="col-md-3 mb-3">
+
+    <div class="col-md-4 mb-3">
         <div class="card bg-info text-white">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
@@ -63,23 +62,9 @@
             </div>
         </div>
     </div>
-    
-    <div class="col-md-3 mb-3">
-        <div class="card bg-warning text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h4 class="card-title">{{ user.role|title }}</h4>
-                        <p class="card-text">Role</p>
-                    </div>
-                    <div class="align-self-center">
-                        <i class="fas fa-user-tag fa-2x"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
+
+
 
 <!-- Quick Actions -->
 <div class="row mb-4">
@@ -106,6 +91,30 @@
                         <a href="{% url 'adminview:attendance_analytics' %}" class="btn btn-outline-info w-100">
                             <i class="fas fa-chart-bar me-2"></i>View Analytics
                         </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-line me-2"></i>Overall Statistics
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <h6 class="text-muted">Daily Attendance (Last 7 Days)</h6>
+                        <canvas id="staffDailyChart" height="180" style="width: 100%;"></canvas>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <h6 class="text-muted">Class-wise Attendance (%)</h6>
+                        <canvas id="staffClassChart" height="180" style="width: 100%;"></canvas>
                     </div>
                 </div>
             </div>
@@ -388,7 +397,7 @@
 })();
 </script>
 <script>
-// Auto-refresh staff metrics via JSON API (every 60s)
+// Auto-refresh staff metrics via JSON API (every 10s). Also refresh when tab becomes visible.
 (function(){
   function applyMetrics(data){
     const c = document.getElementById('staff-classes-count');
@@ -397,6 +406,15 @@
     if (c && typeof data.classes_count !== 'undefined') c.textContent = data.classes_count;
     if (s && typeof data.total_students !== 'undefined') s.textContent = data.total_students;
     if (t && typeof data.today_attendance !== 'undefined') t.textContent = data.today_attendance;
+
+    try {
+      if (Array.isArray(data.daily_attendance)) {
+        drawDailyChart('staffDailyChart', data.daily_attendance);
+      }
+      if (Array.isArray(data.class_attendance)) {
+        drawClassChart('staffClassChart', data.class_attendance);
+      }
+    } catch (e) { /* ignore render errors */ }
   }
   async function refresh(){
     try{
@@ -407,7 +425,103 @@
     }catch(e){ /* ignore transient errors */ }
   }
   refresh();
-  setInterval(refresh, 60000);
+  // Poll more frequently for near real-time updates
+  setInterval(refresh, 10000);
+  // Refresh when the tab becomes visible again
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 })();
+</script>
+
+<script>
+function _canvasSizeToClient(canvas) {
+  if (!canvas) return;
+  const w = canvas.clientWidth || canvas.width;
+  if (w && canvas.width !== w) canvas.width = w;
+}
+
+function drawDailyChart(canvasId, series){
+  const cv = document.getElementById(canvasId);
+  if (!cv) return;
+  _canvasSizeToClient(cv);
+  const ctx = cv.getContext('2d');
+  const W = cv.width;
+  const H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const totals = series.map(d => Number(d.total_count || 0));
+  const presents = series.map(d => Number(d.present_count || 0));
+  const dates = series.map(d => String(d.date || ''));
+  const maxY = Math.max(1, ...totals, ...presents);
+
+  const padding = 28;
+  const innerW = Math.max(1, W - padding * 2);
+  const innerH = Math.max(1, H - padding * 2);
+
+  // baseline
+  ctx.strokeStyle = '#dee2e6';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding, H - padding);
+  ctx.lineTo(W - padding, H - padding);
+  ctx.stroke();
+
+  function plot(values, color){
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    values.forEach((v, i) => {
+      const x = padding + (i * (innerW / Math.max(1, values.length - 1)));
+      const y = padding + innerH * (1 - (v / maxY));
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  plot(totals, '#6c757d');
+  plot(presents, '#0d6efd');
+
+  // x labels (MM-DD)
+  ctx.fillStyle = '#6c757d';
+  ctx.font = '10px sans-serif';
+  dates.forEach((d, i) => {
+    const lbl = d.length >= 10 ? d.slice(5) : d;
+    const x = padding + (i * (innerW / Math.max(1, dates.length - 1)));
+    ctx.fillText(lbl, x - 12, H - 8);
+  });
+}
+
+function drawClassChart(canvasId, items){
+  const cv = document.getElementById(canvasId);
+  if (!cv) return;
+  _canvasSizeToClient(cv);
+  const ctx = cv.getContext('2d');
+  const W = cv.width;
+  const H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const data = (items || []).slice().sort((a, b) => (Number(b.percentage || 0) - Number(a.percentage || 0))).slice(0, 8);
+  const padding = 10;
+  const labelW = 80;
+  const barH = 14;
+  const gap = 8;
+  const baseX = padding + labelW;
+  const maxW = Math.max(1, W - baseX - padding);
+
+  ctx.fillStyle = '#6c757d';
+  ctx.font = '10px sans-serif';
+  data.forEach((d, idx) => {
+    const name = String(d.class_name || '').slice(0, 10);
+    const pct = Math.max(0, Math.min(100, Number(d.percentage || 0)));
+    const y = padding + idx * (barH + gap);
+    ctx.fillStyle = '#6c757d';
+    ctx.fillText(name, padding, y + 11);
+    ctx.fillStyle = '#e9ecef';
+    ctx.fillRect(baseX, y, maxW, barH);
+    ctx.fillStyle = '#198754';
+    ctx.fillRect(baseX, y, (pct / 100) * maxW, barH);
+    ctx.fillStyle = '#6c757d';
+    ctx.fillText(pct.toFixed(0) + '%', baseX + (pct / 100) * maxW + 6, y + 11);
+  });
+}
 </script>
 {% endblock %}
