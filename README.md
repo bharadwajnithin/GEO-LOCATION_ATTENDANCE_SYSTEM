@@ -139,8 +139,7 @@ Details are in `PROJECT_DOCUMENTATION.txt` and `PROJECT_ARCHITECTURE.md`.
 - `requirements.txt`: Minimal deps to run core flows.
 - `enhanced_requirements.txt`: Full stack for advanced recognition and analytics.
 
-## License
-Specify your license here (e.g., MIT). If not specified, the project is proprietary by default.
+
 
 ## Acknowledgements
 - Django, Djongo, MongoDB
