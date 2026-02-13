@@ -1,0 +1,5 @@
+install all softwares 
+python libraries
+
+and cmake 
+microsoft desktop application 
