@@ -147,3 +147,21 @@ Details are in `PROJECT_DOCUMENTATION.txt` and `PROJECT_ARCHITECTURE.md`.
 - Google Maps JavaScript API
 - Optional: MediaPipe, DeepFace/Facenet, TensorFlow/PyTorch, dlib
 
+
+
+## 👨‍💻 Author
+
+**Nithin K S**
+
+Developed as a Django-based smart attendance system for educational institutions and corporate training environments.
+
+## 📞 Support
+
+For issues, questions, or contributions, please contact:
+- **Email**: bharadwajnithin666@gmail.com
+- **Alternative**: ksnithin735@gmail.com
+
+You can also open an issue on the repository for technical discussions.
+
+**Note**: This application is built for educational and demonstration purposes. For production deployment, ensure proper security configurations, use a production-grade database, and comply with biometric data protection regulations in your jurisdiction.
+
